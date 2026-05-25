@@ -50,10 +50,19 @@ Ramas y commits transformados a nodes + edges
 
 La aplicacion no utiliza base de datos ni Neo4j. Los servicios TypeScript obtienen las ramas y commits desde GitHub, generan el modelo de grafo y Cytoscape.js lo renderiza. Al ser una aplicacion estatica, puede publicarse posteriormente en GitHub Pages.
 
+## Demo Publica
+
+Una vez habilitado GitHub Pages desde GitHub Actions, la aplicacion se publica en:
+
+[https://douglaslino.github.io/repomap/](https://douglaslino.github.io/repomap/)
+
 ## Estructura Del Proyecto
 
 ```text
 repoMap/
+  .github/
+    workflows/
+      deploy-pages.yml        # Build y publicacion automatica en Pages
   frontend/
     src/
       components/             # Formulario, canvas y controles visuales
@@ -91,16 +100,6 @@ Para detener la aplicacion:
 ```bash
 docker compose down
 ```
-
-## Uso
-
-1. Ingresa una URL de repositorio, por ejemplo `https://github.com/facebook/react`.
-2. Indica la cantidad maxima de commits por rama.
-3. Presiona **Graficar**.
-4. Usa el selector **Ramas visibles** para filtrar el diagrama.
-5. Usa el boton de orientacion para alternar la vista.
-6. En repositorios grandes, haz doble clic sobre una rama o usa el boton de ojo para mostrar commits.
-7. Manten presionada la tecla `Shift` mientras haces clic para seleccionar varios nodos.
 
 ## GitHub API Y Limites
 
