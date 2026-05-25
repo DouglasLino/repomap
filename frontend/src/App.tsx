@@ -6,7 +6,7 @@ import { fetchRepositoryGraph } from "./services/api";
 import type { GraphResponse } from "./types/graph";
 
 export function App() {
-  const [repoUrl, setRepoUrl] = useState("https://github.com/facebook/react");
+  const [repoUrl, setRepoUrl] = useState("https://github.com/DouglasLino/testDiagramView");
   const [maxCommits, setMaxCommits] = useState(5);
   const [graph, setGraph] = useState<GraphResponse | null>(null);
   const [loading, setLoading] = useState(false);

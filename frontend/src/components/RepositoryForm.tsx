@@ -32,7 +32,7 @@ export function RepositoryForm({
         <InputText
           value={repoUrl}
           onChange={(event) => onRepoUrlChange(event.target.value)}
-          placeholder="https://github.com/facebook/react"
+          placeholder="https://github.com/DouglasLino/testDiagramView"
           aria-label="URL del repositorio GitHub"
         />
       </div>
