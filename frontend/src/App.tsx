@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { isAxiosError } from "axios";
 import { Message } from "primereact/message";
 import { RepositoryForm } from "./components/RepositoryForm";
 import { GraphCanvas } from "./components/GraphCanvas";
@@ -24,8 +23,8 @@ export function App() {
       });
       setGraph(response);
     } catch (unknownError) {
-      const message = isAxiosError(unknownError)
-        ? unknownError.response?.data?.detail ?? unknownError.message
+      const message = unknownError instanceof Error
+        ? unknownError.message
         : "No se pudo graficar el repositorio";
       setError(message);
     } finally {
