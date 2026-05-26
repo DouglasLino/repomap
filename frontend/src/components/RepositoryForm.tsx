@@ -37,14 +37,17 @@ export function RepositoryForm({
         />
       </div>
 
-      <InputNumber
-        value={maxCommits}
-        onValueChange={(event) => onMaxCommitsChange(event.value ?? 5)}
-        min={1}
-        max={500}
-        showButtons
-        aria-label="Cantidad maxima de commits por rama"
-      />
+      <div className="max-commits-field">
+        <label htmlFor="max-commits">Máx. commits por rama</label>
+        <InputNumber
+          inputId="max-commits"
+          value={maxCommits}
+          onValueChange={(event) => onMaxCommitsChange(event.value ?? 5)}
+          min={1}
+          max={500}
+          showButtons
+        />
+      </div>
 
       <Button type="submit" label="Graficar" icon="pi pi-sitemap" loading={loading} />
     </form>

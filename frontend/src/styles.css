@@ -51,7 +51,7 @@ h1 {
   display: grid;
   grid-template-columns: minmax(260px, 1fr) 150px auto;
   gap: 12px;
-  align-items: center;
+  align-items: end;
 }
 
 .repo-form .p-inputtext,
@@ -71,6 +71,18 @@ h1 {
   flex: 0 0 auto;
   color: #334155;
   font-size: 18px;
+}
+
+.max-commits-field {
+  display: grid;
+  gap: 6px;
+}
+
+.max-commits-field label {
+  color: #475569;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
 }
 
 .error-message {
@@ -103,6 +115,7 @@ h1 {
 }
 
 .graph-shell {
+  position: relative;
   margin: 20px 28px 28px;
   min-height: calc(100vh - 164px);
   display: grid;
@@ -111,6 +124,37 @@ h1 {
   border: 1px solid #dbe4ef;
   border-radius: 8px;
   overflow: hidden;
+  transition:
+    border-color 220ms ease,
+    box-shadow 220ms ease;
+}
+
+.history-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9;
+  background: rgba(226, 232, 240, 0.48);
+  backdrop-filter: blur(4px);
+  animation: history-backdrop-in 220ms ease;
+}
+
+.graph-shell-history {
+  z-index: 10;
+  border-color: #2563eb;
+  box-shadow:
+    0 0 0 1px rgba(37, 99, 235, 0.2),
+    0 0 24px rgba(37, 99, 235, 0.3),
+    0 12px 42px rgba(15, 23, 42, 0.16);
+}
+
+@keyframes history-backdrop-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
 }
 
 .graph-toolbar {
@@ -286,6 +330,12 @@ h1 {
   background: transparent;
 }
 
+.utility-item {
+  position: relative;
+  width: 44px;
+  height: 44px;
+}
+
 .utility-menu .utility-button.p-button {
   width: 44px;
   height: 44px;
@@ -294,12 +344,20 @@ h1 {
   border: 1px solid rgba(203, 213, 225, 0.8);
   box-shadow: 0 2px 7px rgba(15, 23, 42, 0.08);
   backdrop-filter: blur(4px);
+  transition:
+    background 150ms ease,
+    border-color 150ms ease,
+    box-shadow 150ms ease,
+    transform 150ms ease;
 }
 
-.utility-menu .utility-button.p-button:hover {
+.utility-menu .utility-button.p-button:hover,
+.utility-menu .utility-button.p-button:focus-visible {
   color: #2563eb;
   background: rgba(255, 255, 255, 0.92);
   border-color: #bfdbfe;
+  box-shadow: 0 7px 16px rgba(15, 23, 42, 0.17);
+  transform: translateY(-1px);
 }
 
 .utility-menu .utility-button-active.p-button {
@@ -308,10 +366,211 @@ h1 {
   border-color: #2563eb;
 }
 
-.utility-menu .utility-button-active.p-button:hover {
+.utility-menu .utility-button-active.p-button:hover,
+.utility-menu .utility-button-active.p-button:focus-visible {
   color: #ffffff;
   background: #1d4ed8;
   border-color: #1d4ed8;
+}
+
+.orientation-button.allow-hover-animation:hover .pi-sync {
+  animation: orientation-hover-spin 300ms ease-out;
+}
+
+.orientation-button.is-click-animating .pi-sync {
+  animation: orientation-click-spin 420ms ease-in-out;
+}
+
+@keyframes orientation-hover-spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(180deg);
+  }
+}
+
+@keyframes orientation-click-spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.commits-button.allow-hover-animation:hover .pi-eye,
+.commits-button.allow-hover-animation:hover .pi-eye-slash {
+  animation: commits-hover-blink 280ms ease-in-out;
+  transform-origin: center;
+}
+
+.commits-button.is-click-animating .pi-eye,
+.commits-button.is-click-animating .pi-eye-slash {
+  animation: commits-click-blink 400ms ease-in-out;
+  transform-origin: center;
+}
+
+@keyframes commits-hover-blink {
+  0%,
+  100% {
+    transform: scaleY(1);
+  }
+
+  45% {
+    transform: scaleY(0.16);
+  }
+}
+
+@keyframes commits-click-blink {
+  0%,
+  100% {
+    transform: scale(1) scaleY(1);
+  }
+
+  45% {
+    transform: scale(0.93) scaleY(0.12);
+  }
+
+  70% {
+    transform: scale(1.08) scaleY(1);
+  }
+}
+
+.utility-tooltip {
+  position: absolute;
+  top: 50%;
+  left: calc(100% + 10px);
+  z-index: 25;
+  padding: 8px 11px;
+  color: #334155;
+  background: #ffffff;
+  border: 1px solid #dbe4ef;
+  border-radius: 6px;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.14);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transform: translate(-5px, -50%);
+  transition:
+    opacity 130ms ease,
+    transform 130ms ease;
+}
+
+.utility-item:hover .utility-tooltip,
+.utility-item:focus-within .utility-tooltip {
+  opacity: 1;
+  transform: translate(0, -50%);
+}
+
+.zoom-controls {
+  position: fixed;
+  right: 46px;
+  bottom: 22px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  height: 46px;
+  color: #334155;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid #dbe4ef;
+  border-radius: 8px;
+  box-shadow: 0 3px 10px rgba(15, 23, 42, 0.1);
+  backdrop-filter: blur(4px);
+}
+
+.zoom-controls .p-button {
+  width: 44px;
+  height: 44px;
+  color: #334155;
+  border-radius: 0;
+}
+
+.zoom-controls .p-button:not(:disabled):hover {
+  color: #2563eb;
+  background: #eff6ff;
+}
+
+.zoom-controls .zoom-level {
+  display: grid;
+  place-items: center;
+  min-width: 52px;
+  height: 44px;
+  padding: 0;
+  color: #475569;
+  background: transparent;
+  border: 0;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: center;
+  cursor: pointer;
+}
+
+.zoom-controls .zoom-level:hover {
+  color: #2563eb;
+  background: #eff6ff;
+}
+
+.zoom-controls .zoom-level:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: -2px;
+}
+
+.history-controls {
+  position: fixed;
+  left: 50%;
+  bottom: 22px;
+  z-index: 20;
+  display: flex;
+  gap: 10px;
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid #dbe4ef;
+  border-radius: 999px;
+  box-shadow: 0 7px 20px rgba(15, 23, 42, 0.14);
+  backdrop-filter: blur(4px);
+  transform: translateX(-50%);
+  animation: history-controls-in 220ms ease;
+}
+
+.history-controls .p-button {
+  width: 46px;
+  height: 46px;
+}
+
+.history-controls .p-button:not(.p-disabled) {
+  background: #2563eb;
+  border-color: #2563eb;
+}
+
+.history-controls .p-button:not(.p-disabled):hover {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+}
+
+.history-controls .p-button.p-disabled {
+  color: #94a3b8;
+  background: #f1f5f9;
+  border-color: #e2e8f0;
+  opacity: 1;
+}
+
+@keyframes history-controls-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
 }
 
 .node-details {
@@ -352,6 +611,11 @@ h1 {
 
   .legend {
     justify-content: flex-start;
+  }
+
+  .zoom-controls {
+    right: 16px;
+    bottom: 16px;
   }
 
 }
