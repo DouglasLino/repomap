@@ -1,5 +1,5 @@
 import cytoscape, { type Core, type NodeSingular } from "cytoscape";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { Sidebar } from "primereact/sidebar";
 import { BranchSelector } from "./BranchSelector";
 import { HistoryControls } from "./HistoryControls";
@@ -8,6 +8,7 @@ import { ZoomControls } from "./ZoomControls";
 import {
   absoluteEndpoint,
   branchBaseHeight,
+  branchWidth,
   colorForBranch,
   commitMessageOffset,
   commitPositionForIndex,
@@ -20,11 +21,13 @@ import {
   graphStyles,
   historyEventsForGraph,
   historyMovementDuration,
+  initialVisibleBranches,
   maxGraphZoom,
   minGraphZoom,
   pointOnBranchBorder,
   toElements,
   zoomStepPercent,
+  type ConnectionStyle,
   type GraphOrientation
 } from "./graphCanvasModel";
 import type { GraphNode, GraphResponse } from "../types/graph";
@@ -35,14 +38,19 @@ interface GraphCanvasProps {
 
 export function GraphCanvas({ graph }: GraphCanvasProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const branchOverlayRef = useRef<HTMLDivElement | null>(null);
   const cyRef = useRef<Core | null>(null);
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
   const [orientation, setOrientation] = useState<GraphOrientation>("vertical");
   const [zoomLevel, setZoomLevel] = useState(1);
   const [historyMode, setHistoryMode] = useState(false);
   const [historyStep, setHistoryStep] = useState(0);
+  const [connectionStyle, setConnectionStyle] = useState<ConnectionStyle>("curved");
+  const [branchOverlaySize, setBranchOverlaySize] = useState({ width: 0, height: 0 });
   const commitsBeforeHistoryRef = useRef<string[]>([]);
   const shouldFitHistoryRef = useRef(false);
+  const shouldFitInitialGraphRef = useRef(false);
+  const shouldFitBranchSelectionRef = useRef(false);
   const wasHistoryModeRef = useRef(false);
 
   const allBranches = useMemo(
@@ -54,11 +62,11 @@ export function GraphCanvas({ graph }: GraphCanvasProps) {
   const compactCommitMode = allBranches.length > 4;
 
   useEffect(() => {
-    setSelectedBranches(allBranches);
-    setExpandedCommitBranches(allBranches.length > 4 ? [] : allBranches);
+    setSelectedBranches(initialVisibleBranches(allBranches));
+    setExpandedCommitBranches(allBranches);
   }, [allBranches]);
 
-  const branches = selectedBranches.length ? selectedBranches : allBranches;
+  const branches = selectedBranches.length ? selectedBranches : initialVisibleBranches(allBranches);
   const visibleGraph = useMemo(() => {
     if (!graph) {
       return null;
@@ -119,10 +127,30 @@ export function GraphCanvas({ graph }: GraphCanvasProps) {
   }, [historyEvents.length]);
 
   useEffect(() => {
+    const overlay = branchOverlayRef.current;
+    if (!overlay) {
+      return;
+    }
+
+    const updateSize = () => {
+      setBranchOverlaySize({
+        width: overlay.offsetWidth,
+        height: overlay.offsetHeight
+      });
+    };
+    const observer = new ResizeObserver(updateSize);
+
+    updateSize();
+    observer.observe(overlay);
+    return () => observer.disconnect();
+  }, [graph]);
+
+  useEffect(() => {
     if (!containerRef.current || !visibleGraph || !graph) {
       return;
     }
 
+    shouldFitInitialGraphRef.current = true;
     cyRef.current?.destroy();
 
     const cy = cytoscape({
@@ -132,7 +160,7 @@ export function GraphCanvas({ graph }: GraphCanvasProps) {
         allBranches,
         allBranches,
         orientation,
-        compactCommitMode ? new Set(allBranches) : new Set()
+        new Set()
       ),
       minZoom: minGraphZoom,
       maxZoom: maxGraphZoom,
@@ -140,7 +168,7 @@ export function GraphCanvas({ graph }: GraphCanvasProps) {
       style: graphStyles,
       layout: {
         name: "preset",
-        fit: true,
+        fit: false,
         padding: 48
       }
     });
@@ -213,13 +241,28 @@ export function GraphCanvas({ graph }: GraphCanvasProps) {
     cy.on("tap", "edge.branch_assumed, edge.branch_possible", (event) => {
       const edge = event.target;
       const defaults = defaultBranchEndpoints(orientation);
+      const sourceEndpointKey = connectionStyle === "taxi" ? "taxiSourceEndpoint" : "branchSourceEndpoint";
+      const targetEndpointKey = connectionStyle === "taxi" ? "taxiTargetEndpoint" : "branchTargetEndpoint";
       const endpoints = {
-        source: endpointPoint(edge.data("branchSourceEndpoint"), defaults.source),
-        target: endpointPoint(edge.data("branchTargetEndpoint"), defaults.target)
+        source: endpointPoint(edge.data(sourceEndpointKey), endpointPoint(edge.data("branchSourceEndpoint"), defaults.source)),
+        target: endpointPoint(edge.data(targetEndpointKey), endpointPoint(edge.data("branchTargetEndpoint"), defaults.target))
       };
       const sourceNode = edge.source();
       const targetNode = edge.target();
-      const curvePosition = edge.midpoint();
+      const sourceEndpointPosition = absoluteEndpoint(sourceNode.position(), endpoints.source);
+      const targetEndpointPosition = absoluteEndpoint(targetNode.position(), endpoints.target);
+      const taxiTurn = Number.parseFloat(edge.data("taxiTurn") ?? "0");
+      const taxiDirection = edge.data("taxiDirection") as string | undefined;
+      const curvePosition = connectionStyle === "taxi" && Number.isFinite(taxiTurn)
+        ? {
+            x: taxiDirection === "leftward" || taxiDirection === "rightward"
+              ? sourceEndpointPosition.x + (taxiDirection === "leftward" ? -taxiTurn : taxiTurn)
+              : (sourceEndpointPosition.x + targetEndpointPosition.x) / 2,
+            y: taxiDirection === "upward" || taxiDirection === "downward"
+              ? sourceEndpointPosition.y + (taxiDirection === "upward" ? -taxiTurn : taxiTurn)
+              : (sourceEndpointPosition.y + targetEndpointPosition.y) / 2
+          }
+        : edge.midpoint();
 
       cy.nodes(".edge-handle").remove();
       cy.edges(".endpoint-editing").removeClass("endpoint-editing");
@@ -277,11 +320,20 @@ export function GraphCanvas({ graph }: GraphCanvasProps) {
       const edge = cy.getElementById(handle.data("edgeId"));
       const branchPosition = branchNode.position();
       const branchNodeHalfHeight = Number(branchNode.data("branchHeight") ?? branchBaseHeight) / 2;
-      const borderPoint = pointOnBranchBorder(
+      const branchNodeHalfWidth = branchWidth / 2;
+      const rawBorderPoint = pointOnBranchBorder(
         handle.position(),
         branchPosition,
         branchNodeHalfHeight
       );
+      const snapToOrthogonalSide = connectionStyle === "taxi";
+      const borderPoint = snapToOrthogonalSide
+        ? (
+            Math.abs(rawBorderPoint.x) / branchNodeHalfWidth >= Math.abs(rawBorderPoint.y) / branchNodeHalfHeight
+              ? { x: rawBorderPoint.x >= 0 ? branchNodeHalfWidth : -branchNodeHalfWidth, y: 0 }
+              : { x: 0, y: rawBorderPoint.y >= 0 ? branchNodeHalfHeight : -branchNodeHalfHeight }
+          )
+        : rawBorderPoint;
 
       handle.position({
         x: branchPosition.x + borderPoint.x,
@@ -291,15 +343,21 @@ export function GraphCanvas({ graph }: GraphCanvasProps) {
       handle.data("borderOffsetY", borderPoint.y);
 
       const endpointProperty = handle.data("endpointRole") === "source"
-        ? "branchSourceEndpoint"
-        : "branchTargetEndpoint";
+        ? (connectionStyle === "taxi" ? "taxiSourceEndpoint" : "branchSourceEndpoint")
+        : (connectionStyle === "taxi" ? "taxiTargetEndpoint" : "branchTargetEndpoint");
       edge.data(endpointProperty, endpointValue(borderPoint));
 
       const curveHandle = cy.getElementById(`curve:${edge.id()}`);
       if (curveHandle.nonempty()) {
         const defaults = defaultBranchEndpoints(orientation);
-        const sourcePoint = endpointPoint(edge.data("branchSourceEndpoint"), defaults.source);
-        const targetPoint = endpointPoint(edge.data("branchTargetEndpoint"), defaults.target);
+        const sourcePoint = endpointPoint(
+          edge.data(connectionStyle === "taxi" ? "taxiSourceEndpoint" : "branchSourceEndpoint"),
+          defaults.source
+        );
+        const targetPoint = endpointPoint(
+          edge.data(connectionStyle === "taxi" ? "taxiTargetEndpoint" : "branchTargetEndpoint"),
+          defaults.target
+        );
         curveHandle.position(edge.midpoint());
       }
     });
@@ -308,10 +366,31 @@ export function GraphCanvas({ graph }: GraphCanvasProps) {
       const handle = event.target;
       const edge = cy.getElementById(handle.data("edgeId"));
       const defaults = defaultBranchEndpoints(orientation);
-      const sourcePoint = endpointPoint(edge.data("branchSourceEndpoint"), defaults.source);
-      const targetPoint = endpointPoint(edge.data("branchTargetEndpoint"), defaults.target);
+      const sourcePoint = endpointPoint(
+        edge.data(connectionStyle === "taxi" ? "taxiSourceEndpoint" : "branchSourceEndpoint"),
+        defaults.source
+      );
+      const targetPoint = endpointPoint(
+        edge.data(connectionStyle === "taxi" ? "taxiTargetEndpoint" : "branchTargetEndpoint"),
+        defaults.target
+      );
       const sourcePosition = absoluteEndpoint(edge.source().position(), sourcePoint);
       const targetPosition = absoluteEndpoint(edge.target().position(), targetPoint);
+
+      if (connectionStyle === "taxi") {
+        const taxiDirection = edge.data("taxiDirection") as string | undefined;
+        const reference = taxiDirection === "leftward" || taxiDirection === "rightward"
+          ? sourcePosition.x
+          : sourcePosition.y;
+        const handleAxis = taxiDirection === "leftward" || taxiDirection === "rightward"
+          ? handle.position("x")
+          : handle.position("y");
+        const nextTurn = Math.max(24, Math.abs(handleAxis - reference));
+
+        edge.data("taxiTurn", `${nextTurn}px`);
+        return;
+      }
+
       const curveControl = controlPointFromCurveHandle(
         sourcePosition,
         targetPosition,
@@ -326,6 +405,10 @@ export function GraphCanvas({ graph }: GraphCanvasProps) {
     cy.on("dragfree", "node.edge-curve-handle", (event) => {
       const handle = event.target;
       const edge = cy.getElementById(handle.data("edgeId"));
+      if (connectionStyle === "taxi") {
+        return;
+      }
+
       handle.position(edge.midpoint());
     });
 
@@ -406,10 +489,10 @@ export function GraphCanvas({ graph }: GraphCanvasProps) {
     });
 
     cy.ready(() => {
-      cy.fit(undefined, 48);
       setZoomLevel(cy.zoom());
     });
 
+    applyConnectionStyle(cy, connectionStyle);
     cyRef.current = cy;
 
     return () => {
@@ -419,6 +502,15 @@ export function GraphCanvas({ graph }: GraphCanvasProps) {
       cyRef.current = null;
     };
   }, [allBranches, compactCommitMode, graph, orientation]);
+
+  useEffect(() => {
+    const cy = cyRef.current;
+    if (!cy) {
+      return;
+    }
+
+    applyConnectionStyle(cy, connectionStyle);
+  }, [connectionStyle]);
 
   useEffect(() => {
     const cy = cyRef.current;
@@ -609,6 +701,17 @@ export function GraphCanvas({ graph }: GraphCanvasProps) {
       ) ? null : current
     ));
     wasHistoryModeRef.current = historyMode;
+
+    const commitsReadyForInitialFit = allBranches.every((branch) => expandedBranches.has(branch));
+    if (!historyMode && shouldFitInitialGraphRef.current && commitsReadyForInitialFit) {
+      shouldFitInitialGraphRef.current = false;
+      window.requestAnimationFrame(() => fitGraph(true));
+    }
+
+    if (shouldFitBranchSelectionRef.current) {
+      shouldFitBranchSelectionRef.current = false;
+      window.requestAnimationFrame(() => fitGraph(true));
+    }
   }, [allBranches, branches, compactCommitMode, expandedCommitBranches, graph, historyGraph, historyMode, orientation]);
 
   useEffect(() => {
@@ -619,6 +722,21 @@ export function GraphCanvas({ graph }: GraphCanvasProps) {
     shouldFitHistoryRef.current = false;
     window.requestAnimationFrame(() => fitGraph(true));
   }, [displayedGraph, historyMode]);
+
+  useEffect(() => {
+    if (!historyMode) {
+      return;
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        exitHistoryMode();
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [historyMode]);
 
   function changeZoom(direction: 1 | -1) {
     const cy = cyRef.current;
@@ -709,6 +827,14 @@ export function GraphCanvas({ graph }: GraphCanvasProps) {
     cy.pan(nextPan);
   }
 
+  function applyConnectionStyle(cy: Core, style: ConnectionStyle) {
+    cy.nodes(".edge-handle").remove();
+    cy.edges(".endpoint-editing").removeClass("endpoint-editing");
+    cy.edges()
+      .removeClass("connection-straight connection-taxi connection-curved")
+      .addClass(`connection-${style}`);
+  }
+
   function toggleHistoryMode() {
     if (!historyMode) {
       commitsBeforeHistoryRef.current = expandedCommitBranches;
@@ -719,6 +845,10 @@ export function GraphCanvas({ graph }: GraphCanvasProps) {
       return;
     }
 
+    exitHistoryMode();
+  }
+
+  function exitHistoryMode() {
     setExpandedCommitBranches(commitsBeforeHistoryRef.current);
     setHistoryMode(false);
   }
@@ -728,6 +858,11 @@ export function GraphCanvas({ graph }: GraphCanvasProps) {
       0,
       Math.min(historyEvents.length, current + direction)
     ));
+  }
+
+  function changeBranchSelection(nextBranches: string[]) {
+    shouldFitBranchSelectionRef.current = true;
+    setSelectedBranches(nextBranches);
   }
 
   if (!graph || !visibleGraph) {
@@ -741,19 +876,34 @@ export function GraphCanvas({ graph }: GraphCanvasProps) {
 
   return (
     <>
-    {historyMode ? <div className="history-backdrop" aria-hidden="true" /> : null}
-    <section className={`graph-shell${historyMode ? " graph-shell-history" : ""}`}>
-      <div className="graph-toolbar">
-        <div>
-          <strong>{graph.repository}</strong>
-          <span>{displayedGraph?.nodes.length ?? 0} nodos · {displayedGraph?.edges.length ?? 0} relaciones</span>
-        </div>
+    {historyMode ? (
+      <button
+        type="button"
+        className="history-backdrop"
+        aria-label="Salir del historial Git"
+        onClick={exitHistoryMode}
+      />
+    ) : null}
+    <section
+      className={`graph-shell${historyMode ? " graph-shell-history" : ""}`}
+      style={{
+        "--branch-overlay-width": `${branchOverlaySize.width}px`,
+        "--branch-overlay-height": `${branchOverlaySize.height}px`
+      } as CSSProperties}
+    >
+      <div className="graph-branch-overlay" ref={branchOverlayRef}>
         <BranchSelector
           branches={allBranches}
           selectedBranches={branches}
           branchColor={(branch) => colorForBranch(branch, allBranches)}
-          onSelectionChange={setSelectedBranches}
+          onSelectionChange={changeBranchSelection}
         />
+      </div>
+      <div className="graph-toolbar">
+        <div className="graph-summary">
+          <strong>{graph.repository}</strong>
+          <span>{displayedGraph?.nodes.length ?? 0} nodos · {displayedGraph?.edges.length ?? 0} relaciones</span>
+        </div>
       </div>
 
       <div className="graph-workspace">
@@ -761,6 +911,7 @@ export function GraphCanvas({ graph }: GraphCanvasProps) {
           horizontalLayout={orientation === "vertical"}
           commitsExpanded={allBranches.every((branch) => expandedCommitBranches.includes(branch))}
           historyMode={historyMode}
+          connectionStyle={connectionStyle}
           onToggleLayout={() => setOrientation((current) => (
             current === "horizontal" ? "vertical" : "horizontal"
           ))}
@@ -768,6 +919,7 @@ export function GraphCanvas({ graph }: GraphCanvasProps) {
             allBranches.every((branch) => current.includes(branch)) ? [] : allBranches
           ))}
           onToggleHistory={toggleHistoryMode}
+          onConnectionStyleChange={setConnectionStyle}
         />
         <div ref={containerRef} className="graph-canvas" />
         {historyMode ? (

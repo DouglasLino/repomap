@@ -42,7 +42,7 @@ export function RepositoryForm({
         <InputNumber
           inputId="max-commits"
           value={maxCommits}
-          onValueChange={(event) => onMaxCommitsChange(event.value ?? 5)}
+          onValueChange={(event) => onMaxCommitsChange(event.value ?? 3)}
           min={1}
           max={500}
           showButtons

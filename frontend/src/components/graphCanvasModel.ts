@@ -2,7 +2,9 @@ import type { ElementDefinition, StylesheetStyle } from "cytoscape";
 import type { GraphNode, GraphResponse } from "../types/graph";
 
 export type GraphOrientation = "horizontal" | "vertical";
+export type ConnectionStyle = "straight" | "taxi" | "curved";
 export type Point = { x: number; y: number };
+type TaxiDirection = "downward" | "upward" | "rightward" | "leftward";
 
 export interface HistoryEvent {
   commitIds: string[];
@@ -22,6 +24,7 @@ export const minGraphZoom = 0.2;
 export const maxGraphZoom = 2.2;
 export const zoomStepPercent = 10;
 export const historyMovementDuration = 360;
+export const maxVisibleBranches = 5;
 
 const branchPalette = [
   "#2563eb",
@@ -109,6 +112,30 @@ function defaultRelationTargetEndpoint(orientation: GraphOrientation, targetHalf
   return orientation === "horizontal"
     ? { x: -branchHalfWidth, y: 0 }
     : { x: 0, y: -targetHalfHeight };
+}
+
+function orthogonalRelationEndpoints(
+  sourcePosition: Point,
+  targetPosition: Point,
+  sourceHalfHeight: number,
+  targetHalfHeight: number
+) {
+  const deltaX = targetPosition.x - sourcePosition.x;
+  const deltaY = targetPosition.y - sourcePosition.y;
+
+  if (Math.abs(deltaX) >= Math.abs(deltaY)) {
+    const direction = deltaX >= 0 ? 1 : -1;
+    return {
+      source: { x: direction * branchHalfWidth, y: 0 },
+      target: { x: -direction * branchHalfWidth, y: 0 }
+    };
+  }
+
+  const direction = deltaY >= 0 ? 1 : -1;
+  return {
+    source: { x: 0, y: direction * sourceHalfHeight },
+    target: { x: 0, y: -direction * targetHalfHeight }
+  };
 }
 
 export function endpointValue(point: Point): string {
@@ -265,6 +292,34 @@ function environmentBranches(branches: string[]): string[] {
       (environmentBranchRank(left) ?? 0) - (environmentBranchRank(right) ?? 0)
       || left.localeCompare(right)
     ));
+}
+
+export function initialVisibleBranches(branches: string[]): string[] {
+  const priority = (branch: string): number => {
+    const name = branch.toLowerCase();
+    if (/^(main|master)([-_].*)?$/.test(name)) {
+      return 0;
+    }
+    if (/^(development|develop|dev)([-_].*)?$/.test(name)) {
+      return 1;
+    }
+    if (/^(qa|quality[-_]?assurance|test|testing)([-_].*)?$/.test(name)) {
+      return 2;
+    }
+    if (/^(staging|stage)([-_].*)?$/.test(name)) {
+      return 3;
+    }
+    if (/^(production|prod)([-_].*)?$/.test(name)) {
+      return 4;
+    }
+    return 5;
+  };
+
+  return branches
+    .map((branch, index) => ({ branch, index }))
+    .sort((left, right) => priority(left.branch) - priority(right.branch) || left.index - right.index)
+    .slice(0, maxVisibleBranches)
+    .map(({ branch }) => branch);
 }
 
 export function expandedRowsOffset(
@@ -458,6 +513,59 @@ export const graphStyles: StylesheetStyle[] = [
     }
   },
   {
+    selector: "edge.connection-straight",
+    style: {
+      "curve-style": "straight"
+    }
+  },
+  {
+    selector: "edge.connection-taxi",
+    style: {
+      "curve-style": "taxi",
+      "edge-distances": "intersection",
+      "taxi-turn": "data(taxiTurn)",
+      "taxi-turn-min-distance": 24
+    }
+  },
+  {
+    selector: "edge.connection-taxi.branch_commit",
+    style: {
+      "source-endpoint": "outside-to-node",
+      "target-endpoint": "outside-to-node"
+    }
+  },
+  {
+    selector: "edge.connection-taxi.branch_assumed, edge.connection-taxi.branch_possible",
+    style: {
+      "source-endpoint": "data(taxiSourceEndpoint)",
+      "target-endpoint": "data(taxiTargetEndpoint)"
+    }
+  },
+  {
+    selector: "edge.connection-taxi.taxi-downward",
+    style: {
+      "taxi-direction": "downward"
+    }
+  },
+  {
+    selector: "edge.connection-taxi.taxi-upward",
+    style: {
+      "taxi-direction": "upward"
+    }
+  },
+  {
+    selector: "edge.connection-taxi.taxi-rightward",
+    style: {
+      "taxi-direction": "rightward"
+    }
+  },
+  {
+    selector: "edge.connection-taxi.taxi-leftward",
+    style: {
+      "taxi-direction": "leftward"
+    }
+  },
+  {
     selector: ".branch-hidden, .commits-collapsed, .history-hidden",
     style: {
       display: "none"
@@ -527,6 +635,34 @@ function positionForNode(
   return commitPositionForIndex(branchPosition, branchHeight, index, orientation);
 }
 
+function directionBetween(source: Point, target: Point): TaxiDirection {
+  const deltaX = target.x - source.x;
+  const deltaY = target.y - source.y;
+
+  if (Math.abs(deltaX) >= Math.abs(deltaY)) {
+    return deltaX >= 0 ? "rightward" : "leftward";
+  }
+
+  return deltaY >= 0 ? "downward" : "upward";
+}
+
+function taxiTurnForEdge(
+  laneIndex: number,
+  parentDistance: number,
+  isBranchRelation: boolean,
+  orientation: GraphOrientation
+): string {
+  const relationBase = isBranchRelation ? 74 + parentDistance * 14 : 38;
+  const laneGap = isBranchRelation ? 28 : 20;
+  const distance = relationBase + laneIndex * laneGap;
+
+  if (orientation === "vertical") {
+    return `${distance}px`;
+  }
+
+  return `${distance}px`;
+}
+
 export function toElements(
   graph: GraphResponse,
   branches: string[],
@@ -581,6 +717,7 @@ export function toElements(
       };
     });
 
+  const taxiLaneIndexes = new Map<string, number>();
   const edges: ElementDefinition[] = graph.edges.map((edge) => {
     const childLane = Math.max(0, branches.indexOf(edge.branch ?? ""));
     const isBranchRelation = edge.type === "branch_assumed" || edge.type === "branch_possible";
@@ -593,12 +730,30 @@ export function toElements(
       : 1;
     const sourceHalfHeight = (branchHeights.get(edge.source) ?? branchBaseHeight) / 2;
     const targetHalfHeight = (branchHeights.get(edge.target) ?? branchBaseHeight) / 2;
+    const sourceNode = graph.nodes.find((node) => node.id === edge.source);
+    const targetNode = graph.nodes.find((node) => node.id === edge.target);
+    const sourcePosition = sourceNode
+      ? positionForNode(sourceNode, graph, branches, orientation)
+      : { x: 0, y: 0 };
+    const targetPosition = targetNode
+      ? positionForNode(targetNode, graph, branches, orientation)
+      : { x: 0, y: 0 };
+    const taxiDirection = directionBetween(sourcePosition, targetPosition);
+    const taxiEndpoints = orthogonalRelationEndpoints(
+      sourcePosition,
+      targetPosition,
+      sourceHalfHeight,
+      targetHalfHeight
+    );
     const sourceEndpoint = isBranchRelation
       ? defaultRelationSourceEndpoint(parentDistance, orientation, sourceHalfHeight)
       : defaultEndpoints.source;
     const targetEndpoint = isBranchRelation
       ? defaultRelationTargetEndpoint(orientation, targetHalfHeight)
       : defaultEndpoints.target;
+    const taxiLaneKey = `${orientation}:${taxiDirection}:${isBranchRelation ? "relation" : "commit"}`;
+    const taxiLaneIndex = taxiLaneIndexes.get(taxiLaneKey) ?? 0;
+    taxiLaneIndexes.set(taxiLaneKey, taxiLaneIndex + 1);
 
     return {
       data: {
@@ -609,9 +764,13 @@ export function toElements(
           : -(34 + parentDistance * 58),
         branchCurveWeight: 0.5,
         branchSourceEndpoint: endpointValue(sourceEndpoint),
-        branchTargetEndpoint: endpointValue(targetEndpoint)
+        branchTargetEndpoint: endpointValue(targetEndpoint),
+        taxiSourceEndpoint: endpointValue(isBranchRelation ? taxiEndpoints.source : sourceEndpoint),
+        taxiTargetEndpoint: endpointValue(isBranchRelation ? taxiEndpoints.target : targetEndpoint),
+        taxiDirection,
+        taxiTurn: taxiTurnForEdge(taxiLaneIndex, parentDistance, isBranchRelation, orientation)
       },
-      classes: `${edge.type}${
+      classes: `${edge.type} taxi-${taxiDirection}${
         collapsedCommitNodeIds.has(edge.source) || collapsedCommitNodeIds.has(edge.target)
           ? " commits-collapsed"
           : ""

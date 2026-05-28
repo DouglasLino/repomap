@@ -17,6 +17,7 @@ export function BranchSelector({
   onSelectionChange
 }: BranchSelectorProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const selectionBeforeAllRef = useRef<string[] | null>(null);
   const [visible, setVisible] = useState(false);
   const [search, setSearch] = useState("");
 
@@ -35,17 +36,40 @@ export function BranchSelector({
     const term = search.trim().toLowerCase();
     return branches.filter((branch) => branch.toLowerCase().includes(term));
   }, [branches, search]);
+  const allSelected = branches.length > 0 && selectedBranches.length === branches.length;
+
+  useEffect(() => {
+    if (!allSelected) {
+      selectionBeforeAllRef.current = null;
+    }
+  }, [allSelected]);
 
   function toggleBranch(branch: string) {
     const isSelected = selectedBranches.includes(branch);
     if (isSelected && selectedBranches.length === 1) {
       return;
     }
-    onSelectionChange(
-      isSelected
-        ? selectedBranches.filter((current) => current !== branch)
-        : [...selectedBranches, branch]
-    );
+
+    const nextSelection = isSelected
+      ? selectedBranches.filter((current) => current !== branch)
+      : [...selectedBranches, branch];
+
+    if (!isSelected && nextSelection.length === branches.length) {
+      selectionBeforeAllRef.current = selectedBranches;
+    }
+
+    onSelectionChange(nextSelection);
+  }
+
+  function toggleAllBranches() {
+    if (allSelected) {
+      onSelectionChange(selectionBeforeAllRef.current ?? selectedBranches.slice(0, 1));
+      selectionBeforeAllRef.current = null;
+      return;
+    }
+
+    selectionBeforeAllRef.current = selectedBranches;
+    onSelectionChange(branches);
   }
 
   return (
@@ -55,11 +79,19 @@ export function BranchSelector({
         text
         className="branch-trigger"
         icon="pi pi-eye"
-        label={`Ramas visibles: ${selectedBranches.length}/${branches.length}`}
         onClick={() => setVisible((current) => !current)}
         aria-haspopup="dialog"
         aria-expanded={visible}
-      />
+        aria-label={`Ramas visibles: ${selectedBranches.length}/${branches.length}`}
+      >
+        <span className="p-button-label">
+          Ramas visibles:{" "}
+          <output className={selectedBranches.length < branches.length ? "branch-count-flash" : undefined}>
+            {selectedBranches.length}
+          </output>
+          /{branches.length}
+        </span>
+      </Button>
 
       {visible ? (
         <section className="branch-menu" aria-label="Seleccionar ramas visibles">
@@ -87,6 +119,14 @@ export function BranchSelector({
 
           <div className="branch-tab">Branches</div>
           <div className="branch-options">
+            <label className="branch-option branch-option-all">
+              <Checkbox
+                inputId="branch-option-all"
+                checked={allSelected}
+                onChange={toggleAllBranches}
+              />
+              <span>Seleccionar todas</span>
+            </label>
             {filteredBranches.map((branch) => {
               const checked = selectedBranches.includes(branch);
               return (

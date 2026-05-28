@@ -115,6 +115,9 @@ h1 {
 }
 
 .graph-shell {
+  --graph-toolbar-gap: 18px;
+  --graph-toolbar-padding-block: 14px;
+  --graph-toolbar-padding-inline: 16px;
   position: relative;
   margin: 20px 28px 28px;
   min-height: calc(100vh - 164px);
@@ -133,8 +136,11 @@ h1 {
   position: fixed;
   inset: 0;
   z-index: 9;
+  padding: 0;
+  border: 0;
   background: rgba(226, 232, 240, 0.48);
   backdrop-filter: blur(4px);
+  cursor: default;
   animation: history-backdrop-in 220ms ease;
 }
 
@@ -159,19 +165,29 @@ h1 {
 
 .graph-toolbar {
   display: flex;
-  justify-content: space-between;
-  gap: 18px;
   align-items: center;
-  padding: 14px 16px;
+  min-height: calc(var(--branch-overlay-height, 0px) + 2 * var(--graph-toolbar-padding-block));
+  padding-block: var(--graph-toolbar-padding-block);
+  padding-inline-start: var(--graph-toolbar-padding-inline);
+  padding-inline-end: calc(
+    var(--graph-toolbar-padding-inline) + var(--branch-overlay-width, 0px) + var(--graph-toolbar-gap)
+  );
   border-bottom: 1px solid #dbe4ef;
 }
 
-.graph-toolbar strong,
-.graph-toolbar span {
-  display: block;
+.graph-summary {
+  min-width: 0;
 }
 
-.graph-toolbar span {
+.graph-summary strong,
+.graph-summary span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.graph-summary span {
   color: #64748b;
   font-size: 13px;
 }
@@ -200,15 +216,42 @@ h1 {
   position: relative;
 }
 
+.graph-branch-overlay {
+  position: absolute;
+  inset-block-start: var(--graph-toolbar-padding-block);
+  inset-inline-end: var(--graph-toolbar-padding-inline);
+  z-index: 30;
+}
+
 .branch-trigger.p-button {
   color: #334155;
+  gap: 0.5rem;
   padding: 9px 12px;
   border: 1px solid #dbe4ef;
   background: #f8fafc;
 }
 
+.branch-trigger.p-button .p-button-label {
+  white-space: nowrap;
+}
+
 .branch-trigger.p-button:hover {
   background: #eef2f7;
+}
+
+.branch-count-flash {
+  animation: branch-count-flash 1s ease-in-out infinite;
+}
+
+@keyframes branch-count-flash {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.28;
+  }
 }
 
 .branch-menu {
@@ -283,6 +326,12 @@ h1 {
 
 .branch-option:hover {
   background: #f1f5f9;
+}
+
+.branch-option-all {
+  margin-bottom: 4px;
+  border-bottom: 1px solid #e2e8f0;
+  font-weight: 600;
 }
 
 .branch-option > i {
@@ -371,6 +420,76 @@ h1 {
   color: #ffffff;
   background: #1d4ed8;
   border-color: #1d4ed8;
+}
+
+.connection-style-item {
+  --connection-radial-distance: 58px;
+}
+
+.connection-radial-menu {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.connection-style-option-wrap {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  z-index: 21;
+  width: 36px;
+  height: 36px;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(0, 0) scale(0.62);
+  transition:
+    opacity 180ms ease,
+    transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    background 150ms ease,
+    border-color 150ms ease,
+    box-shadow 150ms ease;
+}
+
+.connection-style-item.is-open .connection-style-option-wrap {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.connection-style-item.is-open .connection-style-option-wrap-straight {
+  transform: translate(var(--connection-radial-distance), calc(var(--connection-radial-distance) * -0.82)) scale(1);
+}
+
+.connection-style-item.is-open .connection-style-option-wrap-taxi {
+  transform: translate(var(--connection-radial-distance), 0) scale(1);
+}
+
+.connection-style-item.is-open .connection-style-option-wrap-curved {
+  transform: translate(var(--connection-radial-distance), calc(var(--connection-radial-distance) * 0.82)) scale(1);
+}
+
+.connection-radial-menu .connection-style-option.p-button {
+  width: 36px;
+  min-width: 36px;
+  height: 36px;
+  min-height: 36px;
+  padding: 0;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 999px;
+  flex: 0 0 36px;
+  aspect-ratio: 1 / 1;
+}
+
+.connection-preview {
+  display: block;
+  width: 22px;
+  height: 22px;
+  overflow: visible;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .orientation-button.allow-hover-animation:hover .pi-sync {
@@ -462,8 +581,8 @@ h1 {
     transform 130ms ease;
 }
 
-.utility-item:hover .utility-tooltip,
-.utility-item:focus-within .utility-tooltip {
+.utility-item > .utility-button:hover + .utility-tooltip,
+.connection-style-option.p-button:hover + .utility-tooltip {
   opacity: 1;
   transform: translate(0, -50%);
 }
@@ -602,11 +721,6 @@ h1 {
 
   .repo-form {
     grid-template-columns: 1fr;
-  }
-
-  .graph-toolbar {
-    align-items: flex-start;
-    flex-direction: column;
   }
 
   .legend {

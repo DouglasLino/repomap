@@ -7,7 +7,7 @@ import type { GraphResponse } from "./types/graph";
 
 export function App() {
   const [repoUrl, setRepoUrl] = useState("https://github.com/DouglasLino/testDiagramView");
-  const [maxCommits, setMaxCommits] = useState(5);
+  const [maxCommits, setMaxCommits] = useState(3);
   const [graph, setGraph] = useState<GraphResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
