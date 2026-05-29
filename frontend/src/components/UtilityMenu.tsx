@@ -1,6 +1,6 @@
 import { Button } from "primereact/button";
 import { useState } from "react";
-import type { ConnectionStyle } from "./graphCanvasModel";
+import type { ConnectionStyle } from "./flow/types";
 
 interface UtilityMenuProps {
   horizontalLayout: boolean;

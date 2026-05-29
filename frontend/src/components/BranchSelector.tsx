@@ -22,15 +22,19 @@ export function BranchSelector({
   const [search, setSearch] = useState("");
 
   useEffect(() => {
-    function handleOutsideClick(event: MouseEvent) {
+    if (!visible) {
+      return;
+    }
+
+    function handleOutsideClick(event: PointerEvent) {
       if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
         setVisible(false);
       }
     }
 
-    document.addEventListener("mousedown", handleOutsideClick);
-    return () => document.removeEventListener("mousedown", handleOutsideClick);
-  }, []);
+    document.addEventListener("pointerdown", handleOutsideClick, true);
+    return () => document.removeEventListener("pointerdown", handleOutsideClick, true);
+  }, [visible]);
 
   const filteredBranches = useMemo(() => {
     const term = search.trim().toLowerCase();

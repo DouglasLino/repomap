@@ -10,14 +10,13 @@
   },
   "dependencies": {
     "@vitejs/plugin-react": "^4.3.4",
-    "cytoscape": "^3.30.4",
+    "@xyflow/react": "^12.10.2",
     "primereact": "^10.9.1",
     "primeicons": "^7.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
-    "@types/cytoscape": "^3.21.8",
     "@types/react": "^19.0.8",
     "@types/react-dom": "^19.0.3",
     "typescript": "~5.7.2",
