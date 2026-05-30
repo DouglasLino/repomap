@@ -53,7 +53,7 @@ type HistoryRenderSets = {
   fadingEdgeIds: Set<string>;
 };
 
-const commitNodeWidth = 112;
+const commitNodeWidth = 136;
 const commitNodeHeight = 70;
 
 function RepoFlowCanvasInner({ graph, onNodeSelect }: RepoFlowCanvasProps) {

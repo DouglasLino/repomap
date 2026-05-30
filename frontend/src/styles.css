@@ -424,7 +424,7 @@ h1 {
   display: grid;
   justify-items: center;
   gap: 6px;
-  min-width: 112px;
+  width: 136px;
   color: #334155;
   font-size: 11px;
   text-align: center;

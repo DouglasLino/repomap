@@ -11,7 +11,7 @@ import type {
 export const branchNodeWidth = 156;
 export const branchNodeHeight = 42;
 export const commitNodeSize = 42;
-const commitNodeWidth = 112;
+const commitNodeWidth = 136;
 export const maxVisibleBranches = 5;
 
 const branchPalette = [
@@ -95,6 +95,8 @@ function branchGroup(branch: string): string {
   const separatorIndex = branch.indexOf("/");
   return (separatorIndex > 0 ? branch.slice(0, separatorIndex) : branch).trim().toLowerCase();
 }
+
+
 
 function groupedBranches(branches: string[]): string[] {
   return branches.filter((branch) => !isEnvironmentBranch(branch));
