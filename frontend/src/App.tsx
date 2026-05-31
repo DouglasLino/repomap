@@ -123,7 +123,12 @@ export function App() {
         <Message severity="error" text={error} className="error-message" />
       ) : null}
 
-      <RepoFlowCanvas graph={graph} onNodeSelect={setSelectedNode} />
+      <RepoFlowCanvas
+        graph={graph}
+        onNodeSelect={setSelectedNode}
+        onRefresh={handleGraph}
+        refreshing={loading}
+      />
 
       {selectedNode ? (
         <NodeDetailsPanel node={selectedNode} onClose={() => setSelectedNode(null)} />

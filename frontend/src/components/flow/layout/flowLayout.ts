@@ -96,10 +96,48 @@ function branchGroup(branch: string): string {
   return (separatorIndex > 0 ? branch.slice(0, separatorIndex) : branch).trim().toLowerCase();
 }
 
+function projectEnvironmentRank(branch: string): number {
+  const lastSegment = branch.split("/").pop()?.toLowerCase() ?? "";
 
+  if (/^(development|develop|dev)([-_].*)?$/.test(lastSegment)) {
+    return 100;
+  }
+
+  if (/^(qa|quality[-_]?assurance|test|testing)([-_].*)?$/.test(lastSegment)) {
+    return 101;
+  }
+
+  if (/^(staging|stage)([-_].*)?$/.test(lastSegment)) {
+    return 102;
+  }
+
+  if (/^(main|master)([-_].*)?$/.test(lastSegment)) {
+    return 103;
+  }
+
+  return 0;
+}
 
 function groupedBranches(branches: string[]): string[] {
-  return branches.filter((branch) => !isEnvironmentBranch(branch));
+  return branches
+    .filter((branch) => !isEnvironmentBranch(branch))
+    .sort((left, right) => {
+      const leftGroup = branchGroup(left);
+      const rightGroup = branchGroup(right);
+
+      if (leftGroup !== rightGroup) {
+        return leftGroup.localeCompare(rightGroup);
+      }
+
+      const leftRank = projectEnvironmentRank(left);
+      const rightRank = projectEnvironmentRank(right);
+
+      if (leftRank !== rightRank) {
+        return leftRank - rightRank;
+      }
+
+      return left.localeCompare(right);
+    });
 }
 
 function environmentBranches(branches: string[]): string[] {

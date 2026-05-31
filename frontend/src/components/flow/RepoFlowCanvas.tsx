@@ -29,6 +29,7 @@ import {
   initialVisibleBranches
 } from "./layout/flowLayout";
 import type { ConnectionStyle, EdgeAnchorSide, EdgeEditState, FlowOrientation, RepoFlowNode } from "./types";
+import { Button } from "primereact/button";
 
 const nodeTypes: NodeTypes = {
   branch: BranchNode,
@@ -39,9 +40,12 @@ const edgeTypes: EdgeTypes = {
   "repo-edge": RepoEdge
 };
 
+
 interface RepoFlowCanvasProps {
   graph: GraphResponse | null;
   onNodeSelect?: (node: GraphNode) => void;
+  onRefresh?: () => void;
+  refreshing?: boolean;
 }
 
 type NodePositionMap = Record<string, XYPosition>;
@@ -56,7 +60,13 @@ type HistoryRenderSets = {
 const commitNodeWidth = 136;
 const commitNodeHeight = 70;
 
-function RepoFlowCanvasInner({ graph, onNodeSelect }: RepoFlowCanvasProps) {
+function RepoFlowCanvasInner({
+  graph,
+  onNodeSelect,
+  onRefresh,
+  refreshing = false
+}: RepoFlowCanvasProps) {
+  
   const reactFlow = useReactFlow();
   const branchOverlayRef = useRef<HTMLDivElement | null>(null);
   const [orientation, setOrientation] = useState<FlowOrientation>("vertical");
@@ -551,13 +561,27 @@ function RepoFlowCanvasInner({ graph, onNodeSelect }: RepoFlowCanvasProps) {
         } as CSSProperties}
       >
         <div className="graph-branch-overlay" ref={branchOverlayRef}>
-          <BranchSelector
-            branches={allBranches}
-            selectedBranches={branches}
-            branchColor={(branch) => colorForBranch(branch, allBranches)}
-            onSelectionChange={changeBranchSelection}
-          />
+          <div className="graph-branch-actions">
+            <Button
+              type="button"
+              text
+                className="branch-trigger branch-refresh-trigger"
+              icon={`pi pi-refresh${refreshing ? " pi-spin" : ""}`}
+              onClick={onRefresh}
+              disabled={refreshing}
+            >
+              {refreshing ? "Actualizando..." : "Actualizar"}
+            </Button>
+
+            <BranchSelector
+              branches={allBranches}
+              selectedBranches={branches}
+              branchColor={(branch) => colorForBranch(branch, allBranches)}
+              onSelectionChange={changeBranchSelection}
+            />
+          </div>
         </div>
+
         <div className="graph-toolbar">
           <div className="graph-summary">
             <strong>{graph.repository}</strong>
