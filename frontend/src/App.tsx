@@ -76,8 +76,9 @@ export function App() {
   const [graph, setGraph] = useState<GraphResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [syncMessage, setSyncMessage] = useState<string | null>(null);
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
-
+  
   useEffect(() => {
     setSelectedNode(null);
   }, [graph]);
@@ -85,6 +86,7 @@ export function App() {
   async function handleGraph() {
     setLoading(true);
     setError(null);
+    setSyncMessage(null);
 
     try {
       const response = await fetchRepositoryGraph({
@@ -101,6 +103,75 @@ export function App() {
       setLoading(false);
     }
   }
+
+  async function handleRefresh() {
+  if (!graph) {
+    return;
+  }
+
+  setLoading(true);
+  setError(null);
+  setSyncMessage(null);
+
+  try {
+    const response = await fetchRepositoryGraph({
+      repo_url: repoUrl,
+      max_commits: maxCommits
+    });
+
+    const currentBranches = new Set(
+      graph.nodes
+        .filter((node) => node.type === "branch")
+        .map((node) => node.branch ?? node.label)
+    );
+
+    const newBranches = response.nodes
+      .filter((node) => node.type === "branch")
+      .map((node) => node.branch ?? node.label)
+      .filter((branch) => !currentBranches.has(branch));
+
+    const currentCommits = graph.nodes.filter(
+      (node) => node.type === "commit"
+    ).length;
+
+    const newCommits = response.nodes.filter(
+      (node) => node.type === "commit"
+    ).length;
+
+    const addedCommits = Math.max(
+      0,
+      newCommits - currentCommits
+    );
+
+    setGraph(response);
+
+    if (newBranches.length === 0 && addedCommits === 0) {
+      setSyncMessage(
+        "Repositorio sincronizado. No se detectaron cambios."
+      );
+        }  else if (newBranches.length > 0 && addedCommits === 0) {
+      setSyncMessage(
+        `Repositorio sincronizado. Se detectaron ${newBranches.length} ramas nuevas.`
+      );
+    } else if (newBranches.length === 0 && addedCommits > 0) {
+      setSyncMessage(
+        `Repositorio sincronizado. Se detectaron ${addedCommits} commits nuevos.`
+      );
+    } else {
+      setSyncMessage(
+        `Repositorio sincronizado. Se detectaron ${newBranches.length} ramas nuevas y ${addedCommits} commits nuevos.`
+      );
+    }
+  } catch (unknownError) {
+    const message = unknownError instanceof Error
+      ? unknownError.message
+      : "No se pudo sincronizar el repositorio";
+
+    setError(message);
+  } finally {
+    setLoading(false);
+  }
+}
 
   return (
     <main className="app">
@@ -123,10 +194,14 @@ export function App() {
         <Message severity="error" text={error} className="error-message" />
       ) : null}
 
+      {syncMessage ? (
+        <Message severity="success" text={syncMessage} className="success-message" />
+      ) : null}
+
       <RepoFlowCanvas
         graph={graph}
         onNodeSelect={setSelectedNode}
-        onRefresh={handleGraph}
+        onRefresh={handleRefresh}
         refreshing={loading}
       />
 

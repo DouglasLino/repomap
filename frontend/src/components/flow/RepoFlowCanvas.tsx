@@ -94,12 +94,40 @@ function RepoFlowCanvasInner({
     () => graph?.nodes.filter((node) => node.type === "branch").map((node) => node.branch ?? node.label) ?? [],
     [graph]
   );
+  const initializedGraphRef = useRef(false);
+
+  
 
   useEffect(() => {
-    setSelectedBranches(initialVisibleBranches(allBranches));
-    setExpandedCommitBranches(allBranches);
-    setNodePositions({});
-    shouldFitRef.current = true;
+    if (!initializedGraphRef.current) {
+      setSelectedBranches(initialVisibleBranches(allBranches));
+      setExpandedCommitBranches(allBranches);
+
+      initializedGraphRef.current = true;
+
+      shouldFitRef.current = true;
+      return;
+    }
+
+    setSelectedBranches((current) => {
+      const existing = new Set(current);
+
+      const newBranches = allBranches.filter(
+        (branch) => !existing.has(branch)
+      );
+
+      return [...current, ...newBranches];
+    });
+
+    setExpandedCommitBranches((current) => {
+      const existing = new Set(current);
+
+      const newBranches = allBranches.filter(
+        (branch) => !existing.has(branch)
+      );
+
+      return [...current, ...newBranches];
+    });
   }, [allBranches]);
 
   useEffect(() => {

@@ -2,7 +2,11 @@ import { Handle, Position, type NodeProps } from "@xyflow/react";
 import type { RepoFlowNode } from "../types";
 
 function branchLabelLines(label: string): string[] {
-  const separators = ["/", " ", "-", "_", "."];
+  if (label.length <= 14) {
+    return [label];
+  }
+
+  const separators = ["/", "-", "_", " "];
   const separator = separators.find((current) => label.includes(current));
 
   if (!separator) {
@@ -10,6 +14,7 @@ function branchLabelLines(label: string): string[] {
   }
 
   const separatorIndex = label.indexOf(separator);
+
   return [
     label.slice(0, separatorIndex + separator.length),
     label.slice(separatorIndex + separator.length)
