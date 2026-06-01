@@ -1,4 +1,10 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 import {
   applyNodeChanges,
   Background,
@@ -9,7 +15,7 @@ import {
   type EdgeTypes,
   type NodeChange,
   type NodeTypes,
-  type XYPosition
+  type XYPosition,
 } from "@xyflow/react";
 import { BranchSelector } from "../BranchSelector";
 import { HistoryControls } from "../HistoryControls";
@@ -26,20 +32,25 @@ import {
   buildFlowElements,
   colorForBranch,
   commitNodeSize,
-  initialVisibleBranches
+  initialVisibleBranches,
 } from "./layout/flowLayout";
-import type { ConnectionStyle, EdgeAnchorSide, EdgeEditState, FlowOrientation, RepoFlowNode } from "./types";
+import type {
+  ConnectionStyle,
+  EdgeAnchorSide,
+  EdgeEditState,
+  FlowOrientation,
+  RepoFlowNode,
+} from "./types";
 import { Button } from "primereact/button";
 
 const nodeTypes: NodeTypes = {
   branch: BranchNode,
-  commit: CommitNode
+  commit: CommitNode,
 };
 
 const edgeTypes: EdgeTypes = {
-  "repo-edge": RepoEdge
+  "repo-edge": RepoEdge,
 };
-
 
 interface RepoFlowCanvasProps {
   graph: GraphResponse | null;
@@ -64,24 +75,30 @@ function RepoFlowCanvasInner({
   graph,
   onNodeSelect,
   onRefresh,
-  refreshing = false
+  refreshing = false,
 }: RepoFlowCanvasProps) {
-  
   const reactFlow = useReactFlow();
   const branchOverlayRef = useRef<HTMLDivElement | null>(null);
   const [orientation, setOrientation] = useState<FlowOrientation>("vertical");
-  const [connectionStyle, setConnectionStyle] = useState<ConnectionStyle>("curved");
+  const [connectionStyle, setConnectionStyle] =
+    useState<ConnectionStyle>("curved");
   const [selectedBranches, setSelectedBranches] = useState<string[]>([]);
-  const [expandedCommitBranches, setExpandedCommitBranches] = useState<string[]>([]);
+  const [expandedCommitBranches, setExpandedCommitBranches] = useState<
+    string[]
+  >([]);
   const [historyMode, setHistoryMode] = useState(false);
   const [historyStep, setHistoryStep] = useState(0);
   const [zoomLevel, setZoomLevel] = useState(1);
   const [edgeEdits, setEdgeEdits] = useState<Record<string, EdgeEditState>>({});
   const [nodePositions, setNodePositions] = useState<NodePositionMap>({});
   const [flowNodes, setFlowNodes] = useState<RepoFlowNode[]>([]);
-  const [historyRenderSets, setHistoryRenderSets] = useState<HistoryRenderSets | null>(null);
+  const [historyRenderSets, setHistoryRenderSets] =
+    useState<HistoryRenderSets | null>(null);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
-  const [branchOverlaySize, setBranchOverlaySize] = useState({ width: 0, height: 0 });
+  const [branchOverlaySize, setBranchOverlaySize] = useState({
+    width: 0,
+    height: 0,
+  });
   const commitsBeforeHistoryRef = useRef<string[]>([]);
   const shouldFitRef = useRef(false);
   const branchDragRef = useRef<{
@@ -90,21 +107,27 @@ function RepoFlowCanvasInner({
     lastPosition: XYPosition;
   } | null>(null);
 
+  const EMPTY_BRANCHES: string[] = [];
+
   const allBranches = useMemo(
-    () => graph?.nodes.filter((node) => node.type === "branch").map((node) => node.branch ?? node.label) ?? [],
-    [graph]
+    () =>
+      graph?.nodes
+        .filter((node) => node.type === "branch")
+        .map((node) => node.branch ?? node.label) ?? EMPTY_BRANCHES,
+    [graph],
   );
   const initializedGraphRef = useRef(false);
 
-  
-
   useEffect(() => {
+    if (!graph) {
+      return;
+    }
+
     if (!initializedGraphRef.current) {
       setSelectedBranches(initialVisibleBranches(allBranches));
       setExpandedCommitBranches(allBranches);
 
       initializedGraphRef.current = true;
-
       shouldFitRef.current = true;
       return;
     }
@@ -112,9 +135,7 @@ function RepoFlowCanvasInner({
     setSelectedBranches((current) => {
       const existing = new Set(current);
 
-      const newBranches = allBranches.filter(
-        (branch) => !existing.has(branch)
-      );
+      const newBranches = allBranches.filter((branch) => !existing.has(branch));
 
       return [...current, ...newBranches];
     });
@@ -122,9 +143,7 @@ function RepoFlowCanvasInner({
     setExpandedCommitBranches((current) => {
       const existing = new Set(current);
 
-      const newBranches = allBranches.filter(
-        (branch) => !existing.has(branch)
-      );
+      const newBranches = allBranches.filter((branch) => !existing.has(branch));
 
       return [...current, ...newBranches];
     });
@@ -137,7 +156,10 @@ function RepoFlowCanvasInner({
     }
 
     const updateSize = () => {
-      setBranchOverlaySize({ width: overlay.offsetWidth, height: overlay.offsetHeight });
+      setBranchOverlaySize({
+        width: overlay.offsetWidth,
+        height: overlay.offsetHeight,
+      });
     };
     const observer = new ResizeObserver(updateSize);
     updateSize();
@@ -145,7 +167,13 @@ function RepoFlowCanvasInner({
     return () => observer.disconnect();
   }, [graph]);
 
-  const branches = selectedBranches.length ? selectedBranches : initialVisibleBranches(allBranches);
+  const branches = useMemo(
+    () =>
+      selectedBranches.length
+        ? selectedBranches
+        : initialVisibleBranches(allBranches),
+    [allBranches, selectedBranches],
+  );
   const historyEvents = useMemo(() => buildHistoryEvents(graph), [graph]);
   const historySets = useMemo(() => {
     if (!graph || !historyMode) {
@@ -166,19 +194,27 @@ function RepoFlowCanvasInner({
           nodeIds: historySets.nodeIds,
           edgeIds: historySets.edgeIds,
           fadingNodeIds: new Set(),
-          fadingEdgeIds: new Set()
+          fadingEdgeIds: new Set(),
         };
       }
 
-      const removedNodeIds = new Set([...current.nodeIds].filter((nodeId) => !historySets.nodeIds.has(nodeId)));
-      const removedEdgeIds = new Set([...current.edgeIds].filter((edgeId) => !historySets.edgeIds.has(edgeId)));
+      const removedNodeIds = new Set(
+        [...current.nodeIds].filter(
+          (nodeId) => !historySets.nodeIds.has(nodeId),
+        ),
+      );
+      const removedEdgeIds = new Set(
+        [...current.edgeIds].filter(
+          (edgeId) => !historySets.edgeIds.has(edgeId),
+        ),
+      );
 
       if (removedNodeIds.size === 0 && removedEdgeIds.size === 0) {
         return {
           nodeIds: historySets.nodeIds,
           edgeIds: historySets.edgeIds,
           fadingNodeIds: new Set(),
-          fadingEdgeIds: new Set()
+          fadingEdgeIds: new Set(),
         };
       }
 
@@ -186,7 +222,7 @@ function RepoFlowCanvasInner({
         nodeIds: new Set([...historySets.nodeIds, ...removedNodeIds]),
         edgeIds: new Set([...historySets.edgeIds, ...removedEdgeIds]),
         fadingNodeIds: removedNodeIds,
-        fadingEdgeIds: removedEdgeIds
+        fadingEdgeIds: removedEdgeIds,
       };
     });
 
@@ -195,7 +231,7 @@ function RepoFlowCanvasInner({
         nodeIds: historySets.nodeIds,
         edgeIds: historySets.edgeIds,
         fadingNodeIds: new Set(),
-        fadingEdgeIds: new Set()
+        fadingEdgeIds: new Set(),
       });
     }, 260);
 
@@ -206,7 +242,6 @@ function RepoFlowCanvasInner({
     if (!graph) {
       return { nodes: [], edges: [] };
     }
-
     return buildFlowElements({
       graph,
       visibleBranches: branches,
@@ -219,35 +254,51 @@ function RepoFlowCanvasInner({
       visibleNodeIds: historyRenderSets?.nodeIds,
       visibleEdgeIds: historyRenderSets?.edgeIds,
       fadingNodeIds: historyRenderSets?.fadingNodeIds,
-      fadingEdgeIds: historyRenderSets?.fadingEdgeIds
+      fadingEdgeIds: historyRenderSets?.fadingEdgeIds,
     });
-  }, [branches, connectionStyle, expandedCommitBranches, graph, historyRenderSets, orientation]);
+  }, [
+    branches,
+    connectionStyle,
+    expandedCommitBranches,
+    graph,
+    historyRenderSets,
+    orientation,
+  ]);
 
   useEffect(() => {
-    setFlowNodes(baseElements.nodes.map((node) => ({
-      ...node,
-      position: nodePositions[node.id] ?? node.position
-    })));
+    setFlowNodes(
+      baseElements.nodes.map((node) => ({
+        ...node,
+        position: nodePositions[node.id] ?? node.position,
+      })),
+    );
   }, [baseElements.nodes, nodePositions]);
 
   const nodes = flowNodes;
-  const edges = useMemo(() => (
-    baseElements.edges.map((edge) => {
-      const edit = edgeEdits[edge.id];
 
-      return {
-        ...edge,
-        sourceHandle: edit?.sourceSide ? `source-${edit.sourceSide}` : edge.sourceHandle,
-        targetHandle: edit?.targetSide ? `target-${edit.targetSide}` : edge.targetHandle,
-        data: {
-          ...edge.data,
-          curveOffset: edit?.curveOffset ?? 0,
-          onCurveChange: changeEdgeCurve,
-          onAnchorChange: changeEdgeAnchor
-        }
-      };
-    })
-  ), [baseElements.edges, edgeEdits]);
+  const edges = useMemo(
+    () =>
+      baseElements.edges.map((edge) => {
+        const edit = edgeEdits[edge.id];
+
+        return {
+          ...edge,
+          sourceHandle: edit?.sourceSide
+            ? `source-${edit.sourceSide}`
+            : edge.sourceHandle,
+          targetHandle: edit?.targetSide
+            ? `target-${edit.targetSide}`
+            : edge.targetHandle,
+          data: {
+            ...edge.data,
+            curveOffset: edit?.curveOffset ?? 0,
+            onCurveChange: changeEdgeCurve,
+            onAnchorChange: changeEdgeAnchor,
+          },
+        };
+      }),
+    [baseElements.edges, edgeEdits],
+  );
 
   useEffect(() => {
     if (historyMode) {
@@ -267,7 +318,12 @@ function RepoFlowCanvasInner({
     });
   }, [connectionStyle, edges, nodes, reactFlow]);
 
-  function taxiBusY(sourceY: number, targetY: number, laneIndex = 0, curveOffset = 0): number {
+  function taxiBusY(
+    sourceY: number,
+    targetY: number,
+    laneIndex = 0,
+    curveOffset = 0,
+  ): number {
     const laneHeight = 54 + laneIndex * 28;
 
     return Math.min(sourceY, targetY) - laneHeight + curveOffset;
@@ -284,17 +340,27 @@ function RepoFlowCanvasInner({
     return (parts?.[parts.length - 1] as EdgeAnchorSide | undefined) ?? "top";
   }
 
-  function handlePoint(node: RepoFlowNode, handleId: string | null | undefined) {
+  function handlePoint(
+    node: RepoFlowNode,
+    handleId: string | null | undefined,
+  ) {
     const side = handleSide(handleId);
     const size = nodeSize(node);
     const centerX = node.position.x + size.width / 2;
-    const centerY = node.position.y + (node.type === "commit" ? commitNodeSize / 2 : size.height / 2);
+    const centerY =
+      node.position.y +
+      (node.type === "commit" ? commitNodeSize / 2 : size.height / 2);
 
     if (side === "top") {
       return { x: centerX, y: node.position.y };
     }
     if (side === "bottom") {
-      return { x: centerX, y: node.position.y + (node.type === "commit" ? commitNodeSize : size.height) };
+      return {
+        x: centerX,
+        y:
+          node.position.y +
+          (node.type === "commit" ? commitNodeSize : size.height),
+      };
     }
     if (side === "left") {
       return { x: node.position.x, y: centerY };
@@ -323,7 +389,10 @@ function RepoFlowCanvasInner({
     nodes.forEach((node) => {
       const size = nodeSize(node);
       includePoint(node.position);
-      includePoint({ x: node.position.x + size.width, y: node.position.y + size.height });
+      includePoint({
+        x: node.position.x + size.width,
+        y: node.position.y + size.height,
+      });
     });
 
     if (connectionStyle === "taxi") {
@@ -339,12 +408,15 @@ function RepoFlowCanvasInner({
         includePoint(source);
         includePoint(target);
 
-        if (handleSide(edge.sourceHandle) === "top" && handleSide(edge.targetHandle) === "top") {
+        if (
+          handleSide(edge.sourceHandle) === "top" &&
+          handleSide(edge.targetHandle) === "top"
+        ) {
           const busY = taxiBusY(
             source.y,
             target.y,
             edge.data?.taxiLaneIndex ?? 0,
-            edge.data?.curveOffset ?? 0
+            edge.data?.curveOffset ?? 0,
           );
           includePoint({ x: source.x, y: busY });
           includePoint({ x: target.x, y: busY });
@@ -356,7 +428,7 @@ function RepoFlowCanvasInner({
       x: minX,
       y: minY,
       width: maxX - minX,
-      height: maxY - minY
+      height: maxY - minY,
     };
   }
 
@@ -391,7 +463,10 @@ function RepoFlowCanvasInner({
 
   function changeZoom(direction: 1 | -1) {
     const currentZoom = reactFlow.getZoom();
-    const nextZoom = Math.max(0.2, Math.min(2.2, currentZoom + direction * 0.1));
+    const nextZoom = Math.max(
+      0.2,
+      Math.min(2.2, currentZoom + direction * 0.1),
+    );
     reactFlow.zoomTo(nextZoom, { duration: 220 });
   }
 
@@ -415,7 +490,9 @@ function RepoFlowCanvasInner({
   }
 
   function changeHistoryStep(direction: -1 | 1) {
-    setHistoryStep((current) => Math.max(0, Math.min(historyEvents.length, current + direction)));
+    setHistoryStep((current) =>
+      Math.max(0, Math.min(historyEvents.length, current + direction)),
+    );
   }
 
   function changeBranchSelection(nextBranches: string[]) {
@@ -425,7 +502,9 @@ function RepoFlowCanvasInner({
 
   function changeOrientation() {
     setNodePositions({});
-    setOrientation((current) => current === "vertical" ? "horizontal" : "vertical");
+    setOrientation((current) =>
+      current === "vertical" ? "horizontal" : "vertical",
+    );
     shouldFitRef.current = true;
   }
 
@@ -446,13 +525,17 @@ function RepoFlowCanvasInner({
         ...current,
         [edgeId]: {
           ...current[edgeId],
-          curveOffset: nextOffset
-        }
+          curveOffset: nextOffset,
+        },
       };
     });
   }
 
-  function changeEdgeAnchor(edgeId: string, role: "source" | "target", side: EdgeAnchorSide) {
+  function changeEdgeAnchor(
+    edgeId: string,
+    role: "source" | "target",
+    side: EdgeAnchorSide,
+  ) {
     const key = role === "source" ? "sourceSide" : "targetSide";
 
     setEdgeEdits((current) => {
@@ -464,8 +547,8 @@ function RepoFlowCanvasInner({
         ...current,
         [edgeId]: {
           ...current[edgeId],
-          [key]: side
-        }
+          [key]: side,
+        },
       };
     });
   }
@@ -484,7 +567,11 @@ function RepoFlowCanvasInner({
       let next = applyNodeChanges(changes, current) as RepoFlowNode[];
 
       for (const change of changes) {
-        if (change.type !== "position" || !change.position || change.dragging !== true) {
+        if (
+          change.type !== "position" ||
+          !change.position ||
+          change.dragging !== true
+        ) {
           continue;
         }
 
@@ -500,28 +587,28 @@ function RepoFlowCanvasInner({
 
         const delta = {
           x: change.position.x - dragState.lastPosition.x,
-          y: change.position.y - dragState.lastPosition.y
+          y: change.position.y - dragState.lastPosition.y,
         };
 
         if (delta.x === 0 && delta.y === 0) {
           continue;
         }
 
-        next = next.map((node) => (
+        next = next.map((node) =>
           node.type === "commit" && node.data.branch === dragState.branch
             ? {
                 ...node,
                 position: {
                   x: node.position.x + delta.x,
-                  y: node.position.y + delta.y
-                }
+                  y: node.position.y + delta.y,
+                },
               }
-            : node
-        ));
+            : node,
+        );
 
         branchDragRef.current = {
           ...dragState,
-          lastPosition: change.position
+          lastPosition: change.position,
         };
       }
 
@@ -538,7 +625,7 @@ function RepoFlowCanvasInner({
     branchDragRef.current = {
       branchNodeId: node.id,
       branch: node.data.branch,
-      lastPosition: node.position
+      lastPosition: node.position,
     };
   }
 
@@ -550,7 +637,10 @@ function RepoFlowCanvasInner({
 
       for (const node of reactFlow.getNodes()) {
         const currentPosition = current[node.id];
-        if (currentPosition?.x === node.position.x && currentPosition.y === node.position.y) {
+        if (
+          currentPosition?.x === node.position.x &&
+          currentPosition.y === node.position.y
+        ) {
           continue;
         }
 
@@ -583,17 +673,19 @@ function RepoFlowCanvasInner({
       ) : null}
       <section
         className={`graph-shell${historyMode ? " graph-shell-history" : ""}`}
-        style={{
-          "--branch-overlay-width": `${branchOverlaySize.width}px`,
-          "--branch-overlay-height": `${branchOverlaySize.height}px`
-        } as CSSProperties}
+        style={
+          {
+            "--branch-overlay-width": `${branchOverlaySize.width}px`,
+            "--branch-overlay-height": `${branchOverlaySize.height}px`,
+          } as CSSProperties
+        }
       >
         <div className="graph-branch-overlay" ref={branchOverlayRef}>
           <div className="graph-branch-actions">
             <Button
               type="button"
               text
-                className="branch-trigger branch-refresh-trigger"
+              className="branch-trigger branch-refresh-trigger"
               icon={`pi pi-refresh${refreshing ? " pi-spin" : ""}`}
               onClick={onRefresh}
               disabled={refreshing}
@@ -613,20 +705,28 @@ function RepoFlowCanvasInner({
         <div className="graph-toolbar">
           <div className="graph-summary">
             <strong>{graph.repository}</strong>
-            <span>{nodes.length} nodos · {edges.length} relaciones</span>
+            <span>
+              {nodes.length} nodos · {edges.length} relaciones
+            </span>
           </div>
         </div>
 
         <div className="graph-workspace repo-flow-workspace">
           <UtilityMenu
             horizontalLayout={orientation === "vertical"}
-            commitsExpanded={allBranches.every((branch) => expandedCommitBranches.includes(branch))}
+            commitsExpanded={allBranches.every((branch) =>
+              expandedCommitBranches.includes(branch),
+            )}
             historyMode={historyMode}
             connectionStyle={connectionStyle}
             onToggleLayout={changeOrientation}
-            onToggleCommits={() => setExpandedCommitBranches((current) => (
-              allBranches.every((branch) => current.includes(branch)) ? [] : allBranches
-            ))}
+            onToggleCommits={() =>
+              setExpandedCommitBranches((current) =>
+                allBranches.every((branch) => current.includes(branch))
+                  ? []
+                  : allBranches,
+              )
+            }
             onToggleHistory={toggleHistoryMode}
             onConnectionStyleChange={changeConnectionStyle}
           />
@@ -634,7 +734,7 @@ function RepoFlowCanvasInner({
             nodes={nodes}
             edges={edges.map((edge) => ({
               ...edge,
-              selected: edge.id === selectedEdgeId
+              selected: edge.id === selectedEdgeId,
             }))}
             nodeTypes={nodeTypes}
             edgeTypes={edgeTypes}
@@ -657,7 +757,11 @@ function RepoFlowCanvasInner({
             onMove={(_, viewport) => setZoomLevel(viewport.zoom)}
             className="repo-flow-canvas"
           >
-            <Background variant={BackgroundVariant.Lines} gap={28} color="rgba(15, 23, 42, 0.08)" />
+            <Background
+              variant={BackgroundVariant.Lines}
+              gap={28}
+              color="rgba(15, 23, 42, 0.08)"
+            />
           </ReactFlow>
           {historyMode ? (
             <HistoryControls
