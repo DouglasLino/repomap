@@ -1,4 +1,5 @@
 import type { GraphNode, GraphResponse } from "../../../types/graph";
+export { initialVisibleBranches } from "../../../services/branchSelection";
 import type {
   ConnectionStyle,
   EdgeAnchorSide,
@@ -12,7 +13,6 @@ export const branchNodeWidth = 156;
 export const branchNodeHeight = 42;
 export const commitNodeSize = 42;
 const commitNodeWidth = 136;
-export const maxVisibleBranches = 5;
 
 const branchPalette = [
   "#2563eb",
@@ -37,34 +37,6 @@ export function colorForBranch(branch: string | null | undefined, branches: stri
   }
 
   return branchPalette[Math.max(0, branches.indexOf(branch)) % branchPalette.length];
-}
-
-export function initialVisibleBranches(branches: string[]): string[] {
-  const priority = (branch: string): number => {
-    const name = branch.toLowerCase();
-    if (/^(main|master)([-_].*)?$/.test(name)) {
-      return 0;
-    }
-    if (/^(development|develop|dev)([-_].*)?$/.test(name)) {
-      return 1;
-    }
-    if (/^(qa|quality[-_]?assurance|test|testing)([-_].*)?$/.test(name)) {
-      return 2;
-    }
-    if (/^(staging|stage)([-_].*)?$/.test(name)) {
-      return 3;
-    }
-    if (/^(production|prod)([-_].*)?$/.test(name)) {
-      return 4;
-    }
-    return 5;
-  };
-
-  return branches
-    .map((branch, index) => ({ branch, index }))
-    .sort((left, right) => priority(left.branch) - priority(right.branch) || left.index - right.index)
-    .slice(0, maxVisibleBranches)
-    .map(({ branch }) => branch);
 }
 
 function environmentBranchRank(branch: string): number | null {

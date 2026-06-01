@@ -3,9 +3,20 @@ import {
   getBranches,
   getBranchCommits,
   parseGitHubRepoUrl,
+  type RepositoryRef,
   type GitHubBranch,
   type GitHubCommit
 } from "./github";
+import { initialVisibleBranches } from "./branchSelection";
+
+interface RepositoryGraphCache {
+  repo: RepositoryRef;
+  branches: GitHubBranch[];
+  commitsByBranch: Map<string, GitHubCommit[]>;
+  maxCommits: number;
+}
+
+const graphCaches = new Map<string, RepositoryGraphCache>();
 
 function commitId(branchName: string, sha: string): string {
   return `commit:${branchName}:${sha}`;
@@ -63,9 +74,28 @@ function addEdge(edges: Map<string, GraphEdge>, edge: GraphEdge): void {
   }
 }
 
-export async function buildRepositoryGraph(repoUrl: string, maxCommits: number): Promise<GraphResponse> {
-  const repo = parseGitHubRepoUrl(repoUrl);
-  const branches = (await getBranches(repo)).sort(compareBranches);
+function graphCacheKey(repo: RepositoryRef, maxCommits: number): string {
+  return `${repo.fullName.toLowerCase()}:${maxCommits}`;
+}
+
+async function loadMissingBranchCommits(
+  cache: RepositoryGraphCache,
+  branchNames: string[]
+): Promise<void> {
+  const availableBranches = new Set(cache.branches.map((branch) => branch.name));
+  const missingBranches = Array.from(new Set(branchNames))
+    .filter((branchName) => availableBranches.has(branchName) && !cache.commitsByBranch.has(branchName));
+
+  await Promise.all(
+    missingBranches.map(async (branchName) => {
+      const commits = await getBranchCommits(cache.repo, branchName, cache.maxCommits);
+      cache.commitsByBranch.set(branchName, commits);
+    })
+  );
+}
+
+function graphFromCache(cache: RepositoryGraphCache): GraphResponse {
+  const { repo, branches, commitsByBranch: cachedCommits } = cache;
   if (branches.length === 0) {
     return { repository: repo.fullName, nodes: [], edges: [] };
   }
@@ -83,7 +113,7 @@ export async function buildRepositoryGraph(repoUrl: string, maxCommits: number):
     const branchGraphNode = branchNode(branchName);
     nodes.set(branchGraphNode.id, branchGraphNode);
 
-    const commits = await getBranchCommits(repo, branchName, maxCommits);
+    const commits = cachedCommits.get(branchName) ?? [];
     branchCommits.set(branchName, commits);
     const commitShas = new Set(commits.map((commit) => commit.sha));
     branchCommitShas.set(branchName, commitShas);
@@ -135,7 +165,10 @@ export async function buildRepositoryGraph(repoUrl: string, maxCommits: number):
         }
         const sourceCandidates = Array.from(branchCommitShas.entries())
           .filter(([branchName, shas]) => (
-            branchName !== destinationBranch && shas.has(mergedParent.sha as string)
+            branchName !== destinationBranch
+            && shas.has(mergedParent.sha as string)
+            // A downstream branch may inherit both commits. It is not the direct merge source.
+            && !shas.has(mergeCommit.sha)
           ))
           .map(([branchName]) => branchName);
         if (sourceCandidates.length === 0) {
@@ -197,4 +230,60 @@ export async function buildRepositoryGraph(repoUrl: string, maxCommits: number):
     nodes: Array.from(nodes.values()),
     edges: Array.from(edges.values())
   };
+}
+
+export async function buildRepositoryGraph(repoUrl: string, maxCommits: number): Promise<GraphResponse> {
+  const repo = parseGitHubRepoUrl(repoUrl);
+  const branches = (await getBranches(repo)).sort(compareBranches);
+  const key = graphCacheKey(repo, maxCommits);
+  const previousCache = graphCaches.get(key);
+  const cache: RepositoryGraphCache = {
+    repo,
+    branches,
+    commitsByBranch: previousCache?.commitsByBranch ?? new Map(),
+    maxCommits
+  };
+
+  graphCaches.set(key, cache);
+  const initialBranches = initialVisibleBranches(branches.map((branch) => branch.name));
+  initialBranches.forEach((branchName) => cache.commitsByBranch.delete(branchName));
+  await loadMissingBranchCommits(cache, initialBranches);
+  return graphFromCache(cache);
+}
+
+export async function loadRepositoryBranches(
+  repoUrl: string,
+  maxCommits: number,
+  branchNames: string[]
+): Promise<GraphResponse> {
+  const repo = parseGitHubRepoUrl(repoUrl);
+  const cache = graphCaches.get(graphCacheKey(repo, maxCommits));
+  if (!cache) {
+    return buildRepositoryGraph(repoUrl, maxCommits);
+  }
+
+  await loadMissingBranchCommits(cache, branchNames);
+  return graphFromCache(cache);
+}
+
+export async function refreshRepositoryBranches(
+  repoUrl: string,
+  maxCommits: number,
+  branchNames: string[]
+): Promise<GraphResponse> {
+  const repo = parseGitHubRepoUrl(repoUrl);
+  const branches = (await getBranches(repo)).sort(compareBranches);
+  const key = graphCacheKey(repo, maxCommits);
+  const previousCache = graphCaches.get(key);
+  const cache: RepositoryGraphCache = {
+    repo,
+    branches,
+    commitsByBranch: previousCache?.commitsByBranch ?? new Map(),
+    maxCommits
+  };
+
+  graphCaches.set(key, cache);
+  branchNames.forEach((branchName) => cache.commitsByBranch.delete(branchName));
+  await loadMissingBranchCommits(cache, branchNames);
+  return graphFromCache(cache);
 }

@@ -2,7 +2,11 @@ import { useEffect, useState } from "react";
 import { Message } from "primereact/message";
 import { RepositoryForm } from "./components/RepositoryForm";
 import { RepoFlowCanvas } from "./components/flow/RepoFlowCanvas";
-import { fetchRepositoryGraph } from "./services/api";
+import {
+  fetchRepositoryBranches,
+  fetchRepositoryGraph,
+  refreshRepositoryGraph
+} from "./services/api";
 import type { GraphNode, GraphResponse } from "./types/graph";
 
 function selectedNodeTitle(node: GraphNode): string {
@@ -104,7 +108,7 @@ export function App() {
     }
   }
 
-  async function handleRefresh() {
+  async function handleRefresh(branches: string[]) {
   if (!graph) {
     return;
   }
@@ -114,10 +118,13 @@ export function App() {
   setSyncMessage(null);
 
   try {
-    const response = await fetchRepositoryGraph({
-      repo_url: repoUrl,
-      max_commits: maxCommits
-    });
+    const response = await refreshRepositoryGraph(
+      {
+        repo_url: repoUrl,
+        max_commits: maxCommits
+      },
+      branches
+    );
 
     const currentBranches = new Set(
       graph.nodes
@@ -173,6 +180,29 @@ export function App() {
   }
 }
 
+  async function handleBranchSelection(branches: string[]) {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const response = await fetchRepositoryBranches(
+        {
+          repo_url: repoUrl,
+          max_commits: maxCommits
+        },
+        branches
+      );
+      setGraph(response);
+    } catch (unknownError) {
+      const message = unknownError instanceof Error
+        ? unknownError.message
+        : "No se pudo cargar la rama seleccionada";
+      setError(message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
     <main className="app">
       <header className="topbar">
@@ -201,6 +231,7 @@ export function App() {
       <RepoFlowCanvas
         graph={graph}
         onNodeSelect={setSelectedNode}
+        onBranchesRequest={handleBranchSelection}
         onRefresh={handleRefresh}
         refreshing={loading}
       />

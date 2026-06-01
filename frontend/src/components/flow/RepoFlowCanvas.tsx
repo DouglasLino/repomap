@@ -55,7 +55,8 @@ const edgeTypes: EdgeTypes = {
 interface RepoFlowCanvasProps {
   graph: GraphResponse | null;
   onNodeSelect?: (node: GraphNode) => void;
-  onRefresh?: () => void;
+  onBranchesRequest?: (branches: string[]) => Promise<void>;
+  onRefresh?: (branches: string[]) => void;
   refreshing?: boolean;
 }
 
@@ -74,6 +75,7 @@ const commitNodeHeight = 70;
 function RepoFlowCanvasInner({
   graph,
   onNodeSelect,
+  onBranchesRequest,
   onRefresh,
   refreshing = false,
 }: RepoFlowCanvasProps) {
@@ -116,37 +118,31 @@ function RepoFlowCanvasInner({
         .map((node) => node.branch ?? node.label) ?? EMPTY_BRANCHES,
     [graph],
   );
-  const initializedGraphRef = useRef(false);
+  const initializedRepositoryRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!graph) {
       return;
     }
 
-    if (!initializedGraphRef.current) {
+    if (initializedRepositoryRef.current !== graph.repository) {
       setSelectedBranches(initialVisibleBranches(allBranches));
       setExpandedCommitBranches(allBranches);
 
-      initializedGraphRef.current = true;
+      initializedRepositoryRef.current = graph.repository;
       shouldFitRef.current = true;
       return;
     }
 
     setSelectedBranches((current) => {
-      const existing = new Set(current);
-
-      const newBranches = allBranches.filter((branch) => !existing.has(branch));
-
-      return [...current, ...newBranches];
+      const availableBranches = new Set(allBranches);
+      const availableSelection = current.filter((branch) => availableBranches.has(branch));
+      return availableSelection.length > 0
+        ? availableSelection
+        : initialVisibleBranches(allBranches);
     });
 
-    setExpandedCommitBranches((current) => {
-      const existing = new Set(current);
-
-      const newBranches = allBranches.filter((branch) => !existing.has(branch));
-
-      return [...current, ...newBranches];
-    });
+    setExpandedCommitBranches(allBranches);
   }, [allBranches]);
 
   useEffect(() => {
@@ -496,8 +492,13 @@ function RepoFlowCanvasInner({
   }
 
   function changeBranchSelection(nextBranches: string[]) {
+    const addedBranches = nextBranches.filter((branch) => !branches.includes(branch));
     setSelectedBranches(nextBranches);
     shouldFitRef.current = true;
+
+    if (addedBranches.length > 0) {
+      void onBranchesRequest?.(addedBranches);
+    }
   }
 
   function changeOrientation() {
@@ -687,7 +688,7 @@ function RepoFlowCanvasInner({
               text
               className="branch-trigger branch-refresh-trigger"
               icon={`pi pi-refresh${refreshing ? " pi-spin" : ""}`}
-              onClick={onRefresh}
+              onClick={() => onRefresh?.(branches)}
               disabled={refreshing}
             >
               {refreshing ? "Actualizando..." : "Actualizar"}
