@@ -28,6 +28,8 @@ function commitNode(commit: GitHubCommit, branchName: string): GraphNode {
     label: commit.sha.slice(0, 4),
     type: "commit",
     branch: branchName,
+    sha: commit.sha,
+    parentShas: (commit.parents ?? []).flatMap((parent) => parent.sha ? [parent.sha] : []),
     author: commit.commit?.author?.name ?? null,
     date: commit.commit?.author?.date ?? null,
     message: commit.commit?.message?.split("\n")[0] ?? "",

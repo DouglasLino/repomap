@@ -1,4 +1,4 @@
-import type { GraphResponse } from "../../../types/graph";
+import type { GraphNode, GraphResponse } from "../../../types/graph";
 
 interface HistoryEvent {
   commitIds: string[];
@@ -7,6 +7,10 @@ interface HistoryEvent {
 
 function commitIdentity(id: string): string {
   return id.slice(id.lastIndexOf(":") + 1);
+}
+
+function commitSha(node: GraphNode): string {
+  return node.sha ?? commitIdentity(node.id);
 }
 
 export function buildHistoryEvents(graph: GraphResponse | null): HistoryEvent[] {
@@ -33,12 +37,51 @@ export function buildHistoryEvents(graph: GraphResponse | null): HistoryEvent[] 
 }
 
 export function visibleHistorySets(graph: GraphResponse, events: HistoryEvent[], step: number) {
-  const commitIds = new Set(events.slice(0, step).flatMap((event) => event.commitIds));
-  const branchIds = new Set(
-    graph.nodes
-      .filter((node) => node.type === "commit" && commitIds.has(node.id))
-      .map((node) => `branch:${node.branch}`)
+  const activeCommitShas = new Set(
+    events.slice(0, step).flatMap((event) => event.commitIds.map(commitIdentity))
   );
+  const commitNodes = graph.nodes.filter((node) => node.type === "commit");
+  const commitsByBranchAndSha = new Map(
+    commitNodes.map((node) => [`${node.branch}:${commitSha(node)}`, node])
+  );
+  const branchHeads = graph.edges
+    .filter((edge) => edge.type === "branch_commit")
+    .map((edge) => graph.nodes.find((node) => node.id === edge.target))
+    .filter((node): node is GraphNode => Boolean(node));
+  const commitIds = new Set<string>();
+
+  branchHeads.forEach((currentHead) => {
+    const branch = currentHead.branch ?? "";
+    let historicalHead: GraphNode | undefined = currentHead;
+
+    while (historicalHead && !activeCommitShas.has(commitSha(historicalHead))) {
+      const firstParentSha: string | undefined = historicalHead.parentShas?.[0];
+      historicalHead = firstParentSha
+        ? commitsByBranchAndSha.get(`${branch}:${firstParentSha}`)
+        : undefined;
+    }
+
+    const pending = historicalHead ? [historicalHead] : [];
+    while (pending.length > 0) {
+      const commit = pending.pop() as GraphNode;
+      const sha = commitSha(commit);
+      if (commitIds.has(commit.id) || !activeCommitShas.has(sha)) {
+        continue;
+      }
+
+      commitIds.add(commit.id);
+      (commit.parentShas ?? []).forEach((parentSha) => {
+        const parent = commitsByBranchAndSha.get(`${branch}:${parentSha}`);
+        if (parent) {
+          pending.push(parent);
+        }
+      });
+    }
+  });
+
+  const branchIds = graph.nodes
+    .filter((node) => node.type === "branch")
+    .map((node) => node.id);
   const nodeIds = new Set([...commitIds, ...branchIds]);
   const edgeIds = new Set(
     graph.edges
@@ -48,4 +91,3 @@ export function visibleHistorySets(graph: GraphResponse, events: HistoryEvent[],
 
   return { nodeIds, edgeIds };
 }
-

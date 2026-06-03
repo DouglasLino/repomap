@@ -12,6 +12,8 @@ export interface GraphNode {
   label: string;
   type: GraphNodeType;
   branch?: string | null;
+  sha?: string | null;
+  parentShas?: string[];
   author?: string | null;
   date?: string | null;
   message?: string | null;
