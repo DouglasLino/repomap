@@ -12,6 +12,7 @@ import {
   ReactFlow,
   ReactFlowProvider,
   useReactFlow,
+  useUpdateNodeInternals,
   type EdgeTypes,
   type NodeChange,
   type NodeTypes,
@@ -72,6 +73,29 @@ type HistoryRenderSets = {
 const commitNodeWidth = 136;
 const commitNodeHeight = 70;
 
+function GraphLegend() {
+  return (
+    <aside className="graph-legend" aria-label="Leyenda del diagrama">
+      <div className="graph-legend-item">
+        <span className="graph-legend-branch" aria-hidden="true" />
+        <span><strong>Rama</strong> representa una rama Git.</span>
+      </div>
+      <div className="graph-legend-item">
+        <span className="graph-legend-commit" aria-hidden="true" />
+        <span><strong>Commit</strong> representa un commit Git.</span>
+      </div>
+      <div className="graph-legend-item">
+        <span className="graph-legend-line graph-legend-line-solid" aria-hidden="true" />
+        <span><strong>Relación de rama</strong> confirmada por el historial Git.</span>
+      </div>
+      <div className="graph-legend-item">
+        <span className="graph-legend-line graph-legend-line-dashed" aria-hidden="true" />
+        <span><strong>Posible origen de rama</strong> inferido por historial compartido.</span>
+      </div>
+    </aside>
+  );
+}
+
 function RepoFlowCanvasInner({
   graph,
   onNodeSelect,
@@ -80,6 +104,7 @@ function RepoFlowCanvasInner({
   refreshing = false,
 }: RepoFlowCanvasProps) {
   const reactFlow = useReactFlow();
+  const updateNodeInternals = useUpdateNodeInternals();
   const branchOverlayRef = useRef<HTMLDivElement | null>(null);
   const [orientation, setOrientation] = useState<FlowOrientation>("vertical");
   const [connectionStyle, setConnectionStyle] =
@@ -90,6 +115,7 @@ function RepoFlowCanvasInner({
   >([]);
   const [historyMode, setHistoryMode] = useState(false);
   const [historyStep, setHistoryStep] = useState(0);
+  const [draggingNode, setDraggingNode] = useState(false);
   const [zoomLevel, setZoomLevel] = useState(1);
   const [edgeEdits, setEdgeEdits] = useState<Record<string, EdgeEditState>>({});
   const [nodePositions, setNodePositions] = useState<NodePositionMap>({});
@@ -607,6 +633,12 @@ function RepoFlowCanvasInner({
             : node,
         );
 
+        window.requestAnimationFrame(() => {
+          next
+            .filter((node) => node.id === draggedNode.id || node.data.branch === dragState.branch)
+            .forEach((node) => updateNodeInternals(node.id));
+        });
+
         branchDragRef.current = {
           ...dragState,
           lastPosition: change.position,
@@ -618,6 +650,8 @@ function RepoFlowCanvasInner({
   }
 
   function startNodeDrag(_: React.MouseEvent, node: RepoFlowNode) {
+    setDraggingNode(true);
+
     if (node.type !== "branch") {
       branchDragRef.current = null;
       return;
@@ -631,6 +665,7 @@ function RepoFlowCanvasInner({
   }
 
   function persistCurrentNodePositions() {
+    setDraggingNode(false);
     branchDragRef.current = null;
     setNodePositions((current) => {
       const next = { ...current };
@@ -673,7 +708,7 @@ function RepoFlowCanvasInner({
         />
       ) : null}
       <section
-        className={`graph-shell${historyMode ? " graph-shell-history" : ""}`}
+        className={`graph-shell${historyMode ? " graph-shell-history" : ""}${draggingNode ? " graph-shell-dragging" : ""}`}
         style={
           {
             "--branch-overlay-width": `${branchOverlaySize.width}px`,
@@ -772,6 +807,7 @@ function RepoFlowCanvasInner({
               onNext={() => changeHistoryStep(1)}
             />
           ) : null}
+          <GraphLegend />
           <ZoomControls
             zoomPercent={Math.round(zoomLevel * 100)}
             canZoomIn={zoomLevel < 2.2}

@@ -118,6 +118,7 @@ function graphFromCache(cache: RepositoryGraphCache): GraphResponse {
     const commits = cachedCommits.get(branchName) ?? [];
     branchCommits.set(branchName, commits);
     const commitShas = new Set(commits.map((commit) => commit.sha));
+    const commitIndexes = new Map(commits.map((commit, index) => [commit.sha, index]));
     branchCommitShas.set(branchName, commitShas);
     if (commits.length > 0) {
       branchHeads.set(branchName, commits[0].sha);
@@ -137,19 +138,27 @@ function graphFromCache(cache: RepositoryGraphCache): GraphResponse {
         });
       }
 
-      (commit.parents ?? []).forEach((parent) => {
-        if (!parent.sha || !commitShas.has(parent.sha)) {
-          return;
-        }
+      const directParent = (commit.parents ?? [])
+        .filter((parent): parent is { sha: string } => (
+          Boolean(parent.sha)
+          && commitShas.has(parent.sha as string)
+          && (commitIndexes.get(parent.sha as string) ?? -1) > index
+        ))
+        .sort((left, right) => (
+          (commitIndexes.get(left.sha) ?? Number.POSITIVE_INFINITY)
+          - (commitIndexes.get(right.sha) ?? Number.POSITIVE_INFINITY)
+        ))[0];
+
+      if (directParent) {
         const type: GraphEdgeType = (commit.parents?.length ?? 0) > 1 ? "merge" : "parent";
         addEdge(edges, {
-          id: `${type}:${branchName}:${commit.sha}:${parent.sha}`,
+          id: `${type}:${branchName}:${commit.sha}:${directParent.sha}`,
           source: id,
-          target: commitId(branchName, parent.sha),
+          target: commitId(branchName, directParent.sha),
           type,
           branch: branchName
         });
-      });
+      }
     });
   }
 
