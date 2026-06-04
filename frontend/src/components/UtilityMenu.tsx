@@ -10,6 +10,7 @@ interface UtilityMenuProps {
   onToggleLayout: () => void;
   onToggleCommits: () => void;
   onToggleHistory: () => void;
+  onExportDiagram: () => void;
   onConnectionStyleChange: (style: ConnectionStyle) => void;
 }
 
@@ -37,6 +38,7 @@ export function UtilityMenu({
   onToggleLayout,
   onToggleCommits,
   onToggleHistory,
+  onExportDiagram,
   onConnectionStyleChange
 }: UtilityMenuProps) {
   const [orientationAnimating, setOrientationAnimating] = useState(false);
@@ -195,6 +197,7 @@ export function UtilityMenu({
             text
             aria-label={item.label}
             aria-describedby={item.id}
+            onClick={item.id === "utility-export-tooltip" ? onExportDiagram : undefined}
           />
           <span id={item.id} className="utility-tooltip" role="tooltip">
             {item.label}

@@ -99,6 +99,16 @@ function isChildBranch(branchName: string): boolean {
     .some((segment) => ["feature", "bugfix", "hotfix", "release", "task", "fix"].includes(segment));
 }
 
+function mergeDestinationRank(branchName: string): number {
+  if (isBaseBranch(branchName)) {
+    return 0;
+  }
+  if (isChildBranch(branchName)) {
+    return 2;
+  }
+  return 1;
+}
+
 function addEdge(edges: Map<string, GraphEdge>, edge: GraphEdge): void {
   if (!edges.has(edge.id)) {
     edges.set(edge.id, edge);
@@ -138,6 +148,30 @@ function commitSetKey(commits: GitHubCommit[]): string | null {
   }
 
   return commits.map((commit) => commit.sha).sort().join("|");
+}
+
+function preferredMergeDestination(
+  mergeSha: string,
+  currentBranch: string,
+  branchCommitShas: Map<string, Set<string>>,
+  branchPositions: Map<string, number>
+): string | null {
+  const currentProject = branchProject(currentBranch);
+  const candidates = Array.from(branchCommitShas.entries())
+    .filter(([, shas]) => shas.has(mergeSha))
+    .map(([branchName]) => branchName);
+
+  return candidates
+    .sort((left, right) => {
+      const leftSameProject = branchProject(left) === currentProject ? 0 : 1;
+      const rightSameProject = branchProject(right) === currentProject ? 0 : 1;
+      return (
+        leftSameProject - rightSameProject
+        || mergeDestinationRank(left) - mergeDestinationRank(right)
+        || (branchPositions.get(left) ?? 0) - (branchPositions.get(right) ?? 0)
+        || left.localeCompare(right)
+      );
+    })[0] ?? null;
 }
 
 function graphCacheKey(repo: RepositoryRef, maxCommits: number): string {
@@ -231,6 +265,14 @@ function graphFromCache(cache: RepositoryGraphCache): GraphResponse {
     commits.forEach((mergeCommit) => {
       const parents = mergeCommit.parents ?? [];
       if (parents.length < 2 || representedMerges.has(mergeCommit.sha)) {
+        return;
+      }
+      if (preferredMergeDestination(
+        mergeCommit.sha,
+        destinationBranch,
+        branchCommitShas,
+        branchPositions
+      ) !== destinationBranch) {
         return;
       }
 

@@ -68,51 +68,131 @@ function branchGroup(branch: string): string {
   return (separatorIndex > 0 ? branch.slice(0, separatorIndex) : branch).trim().toLowerCase();
 }
 
-function isProjectBaseBranch(branch: string): boolean {
-  const lastSegment = branch.split("/").pop()?.toLowerCase() ?? "";
-  return [
-    "main",
-    "master",
-    "development",
-    "dev",
-    "qa",
-    "staging",
-    "prod",
-    "production"
-  ].includes(lastSegment);
-}
-
-function isProjectChildBranch(branch: string): boolean {
-  return branch
-    .toLowerCase()
-    .split("/")
-    .some((segment) => ["feature", "bugfix", "hotfix", "release", "task", "fix"].includes(segment));
-}
-
 function projectEnvironmentRank(branch: string): number {
   const lastSegment = branch.split("/").pop()?.toLowerCase() ?? "";
 
-  if (/^(development|develop|dev)([-_].*)?$/.test(lastSegment)) {
+  if (/^(dev|develop)([-_].*)?$/.test(lastSegment)) {
     return 100;
   }
 
-  if (/^(qa|quality[-_]?assurance|test|testing)([-_].*)?$/.test(lastSegment)) {
+  if (/^(development)([-_].*)?$/.test(lastSegment)) {
     return 101;
   }
 
-  if (/^(staging|stage)([-_].*)?$/.test(lastSegment)) {
+  if (/^(qa|quality[-_]?assurance|test|testing)([-_].*)?$/.test(lastSegment)) {
     return 102;
   }
 
-  if (/^(main|master)([-_].*)?$/.test(lastSegment)) {
+  if (/^(staging|stage)([-_].*)?$/.test(lastSegment)) {
     return 103;
+  }
+
+  if (/^(main)([-_].*)?$/.test(lastSegment)) {
+    return 104;
+  }
+
+  if (/^(prod|production)([-_].*)?$/.test(lastSegment)) {
+    return 105;
+  }
+
+  if (/^(master)([-_].*)?$/.test(lastSegment)) {
+    return 106;
   }
 
   return 0;
 }
 
-function groupedBranches(branches: string[]): string[] {
-  return branches
+function branchRelationOrder(graph: GraphResponse | null | undefined, branches: string[], fallbackOrder: string[]): string[] {
+  if (!graph || branches.length < 2) {
+    return fallbackOrder;
+  }
+
+  const branchSet = new Set(branches);
+  const fallbackIndex = new Map(fallbackOrder.map((branch, index) => [branch, index]));
+  const nodeById = new Map(graph.nodes.map((node) => [node.id, node]));
+  const outgoing = new Map(branches.map((branch) => [branch, new Set<string>()]));
+  const incomingCount = new Map(branches.map((branch) => [branch, 0]));
+
+  function hasPath(fromBranch: string, toBranch: string, visited = new Set<string>()): boolean {
+    if (fromBranch === toBranch) {
+      return true;
+    }
+    if (visited.has(fromBranch)) {
+      return false;
+    }
+
+    visited.add(fromBranch);
+    return Array.from(outgoing.get(fromBranch) ?? [])
+      .some((childBranch) => hasPath(childBranch, toBranch, visited));
+  }
+
+  function addConstraint(parentBranch: string | null | undefined, childBranch: string | null | undefined) {
+    if (!parentBranch || !childBranch || parentBranch === childBranch) {
+      return;
+    }
+    if (!branchSet.has(parentBranch) || !branchSet.has(childBranch)) {
+      return;
+    }
+    if (branchGroup(parentBranch) !== branchGroup(childBranch)) {
+      return;
+    }
+
+    const children = outgoing.get(parentBranch);
+    if (!children || children.has(childBranch)) {
+      return;
+    }
+    if (hasPath(childBranch, parentBranch)) {
+      return;
+    }
+
+    children.add(childBranch);
+    incomingCount.set(childBranch, (incomingCount.get(childBranch) ?? 0) + 1);
+  }
+
+  ["pull_request_merge", "merge", "branch_assumed", "branch_possible"].forEach((edgeType) => {
+    graph.edges
+      .filter((edge) => edge.type === edgeType)
+      .forEach((edge) => {
+        const sourceBranch = nodeById.get(edge.source)?.branch;
+        const targetBranch = nodeById.get(edge.target)?.branch;
+        addConstraint(sourceBranch, targetBranch);
+      });
+  });
+
+  const ordered: string[] = [];
+  const queue = branches
+    .filter((branch) => (incomingCount.get(branch) ?? 0) === 0)
+    .sort((left, right) => (fallbackIndex.get(left) ?? 0) - (fallbackIndex.get(right) ?? 0));
+
+  while (queue.length > 0) {
+    const current = queue.shift() as string;
+    ordered.push(current);
+
+    Array.from(outgoing.get(current) ?? [])
+      .sort((left, right) => (fallbackIndex.get(left) ?? 0) - (fallbackIndex.get(right) ?? 0))
+      .forEach((child) => {
+        const nextIncoming = (incomingCount.get(child) ?? 0) - 1;
+        incomingCount.set(child, nextIncoming);
+        if (nextIncoming === 0) {
+          queue.push(child);
+          queue.sort((left, right) => (fallbackIndex.get(left) ?? 0) - (fallbackIndex.get(right) ?? 0));
+        }
+      });
+  }
+
+  if (ordered.length === branches.length) {
+    return ordered;
+  }
+
+  const orderedSet = new Set(ordered);
+  return [
+    ...ordered,
+    ...fallbackOrder.filter((branch) => !orderedSet.has(branch))
+  ];
+}
+
+function groupedBranches(branches: string[], graph?: GraphResponse): string[] {
+  const fallbackOrder = branches
     .filter((branch) => !isEnvironmentBranch(branch))
     .sort((left, right) => {
       const leftGroup = branchGroup(left);
@@ -120,14 +200,6 @@ function groupedBranches(branches: string[]): string[] {
 
       if (leftGroup !== rightGroup) {
         return leftGroup.localeCompare(rightGroup);
-      }
-
-      const leftIsBase = isProjectBaseBranch(left);
-      const rightIsBase = isProjectBaseBranch(right);
-      const leftIsChild = isProjectChildBranch(left);
-      const rightIsChild = isProjectChildBranch(right);
-      if (leftIsBase !== rightIsBase && (leftIsChild || rightIsChild)) {
-        return leftIsBase ? -1 : 1;
       }
 
       const leftRank = projectEnvironmentRank(left);
@@ -139,6 +211,8 @@ function groupedBranches(branches: string[]): string[] {
 
       return left.localeCompare(right);
     });
+
+  return branchRelationOrder(graph, fallbackOrder, fallbackOrder);
 }
 
 function environmentBranches(branches: string[]): string[] {
@@ -149,23 +223,23 @@ function environmentBranches(branches: string[]): string[] {
     ));
 }
 
-function horizontalBranches(branches: string[]): string[] {
+function horizontalBranches(branches: string[], graph?: GraphResponse): string[] {
   return [
-    ...groupedBranches(branches),
+    ...groupedBranches(branches, graph),
     ...environmentBranches(branches)
   ];
 }
 
-function groupedBranchGroups(branches: string[]): string[] {
-  return Array.from(new Set(groupedBranches(branches).map(branchGroup)));
+function groupedBranchGroups(branches: string[], graph?: GraphResponse): string[] {
+  return Array.from(new Set(groupedBranches(branches, graph).map(branchGroup)));
 }
 
-function groupedBranchColumn(branch: string, branches: string[]): number {
-  const grouped = groupedBranches(branches);
+function groupedBranchColumn(branch: string, branches: string[], graph?: GraphResponse): number {
+  const grouped = groupedBranches(branches, graph);
   const group = branchGroup(branch);
   let offset = 0;
 
-  for (const currentGroup of groupedBranchGroups(branches)) {
+  for (const currentGroup of groupedBranchGroups(branches, graph)) {
     if (currentGroup === group) {
       return offset + Math.max(0, grouped.filter((current) => branchGroup(current) === group).indexOf(branch));
     }
@@ -176,8 +250,8 @@ function groupedBranchColumn(branch: string, branches: string[]): number {
   return Math.max(0, grouped.indexOf(branch));
 }
 
-function groupedBranchRow(branch: string, branches: string[]): number {
-  return Math.max(0, groupedBranchGroups(branches).indexOf(branchGroup(branch)));
+function groupedBranchRow(branch: string, branches: string[], graph?: GraphResponse): number {
+  return Math.max(0, groupedBranchGroups(branches, graph).indexOf(branchGroup(branch)));
 }
 
 function shortCommitLabel(label: string): string {
@@ -266,11 +340,11 @@ function defaultEdgeSides(
   return { sourceSide, targetSide: oppositeSide(sourceSide) };
 }
 
-function branchPosition(branch: string, branches: string[], orientation: FlowOrientation) {
+function branchPosition(branch: string, branches: string[], orientation: FlowOrientation, graph?: GraphResponse) {
   const branchColumnGap = 185;
 
   if (orientation === "horizontal") {
-    const ordered = horizontalBranches(branches);
+    const ordered = horizontalBranches(branches, graph);
     const lane = Math.max(0, ordered.indexOf(branch));
     return {
       x: horizontalBranchStartX - lane * horizontalBranchStepX,
@@ -281,7 +355,7 @@ function branchPosition(branch: string, branches: string[], orientation: FlowOri
   if (isEnvironmentBranch(branch)) {
     const environment = environmentBranches(branches);
     const environmentIndex = Math.max(0, environment.indexOf(branch));
-    const grouped = groupedBranches(branches);
+    const grouped = groupedBranches(branches, graph);
     return {
       x: 210 + Math.max(1, grouped.length) * branchColumnGap + 70 + environmentIndex * 165,
       y: 125 + (environment.length - environmentIndex - 1) * 40
@@ -289,8 +363,8 @@ function branchPosition(branch: string, branches: string[], orientation: FlowOri
   }
 
   const environmentRowsHeight = environmentBranches(branches).length * 40;
-  const column = groupedBranchColumn(branch, branches);
-  const row = groupedBranchRow(branch, branches);
+  const column = groupedBranchColumn(branch, branches, graph);
+  const row = groupedBranchRow(branch, branches, graph);
   return {
     x: 210 + column * branchColumnGap,
     y: 185 + environmentRowsHeight + row * 180
@@ -305,7 +379,7 @@ function commitPosition(
   visibleNodeIds?: Set<string>
 ) {
   const branch = node.branch ?? "";
-  const base = branchPosition(branch, branches, orientation);
+  const base = branchPosition(branch, branches, orientation, graph);
   const commits = graph.nodes
     .filter((candidate) => (
       candidate.type === "commit"
@@ -373,7 +447,7 @@ export function buildFlowElements({
     .map<RepoFlowNode>((node) => {
       const branch = node.branch ?? node.label;
       const position = node.type === "branch"
-        ? branchPosition(branch, visibleBranches, orientation)
+        ? branchPosition(branch, visibleBranches, orientation, graph)
         : commitPosition(node, graph, visibleBranches, orientation, visibleNodeIds);
 
       return {
