@@ -150,6 +150,7 @@ function commitSetKey(commits: GitHubCommit[]): string | null {
   return commits.map((commit) => commit.sha).sort().join("|");
 }
 
+/** Chooses the branch that should own a merge commit when multiple visible branches contain it. */
 function preferredMergeDestination(
   mergeSha: string,
   currentBranch: string,
@@ -194,6 +195,7 @@ async function loadMissingBranchCommits(
   );
 }
 
+/** Builds graph nodes and direct Git/PR edges from the cached GitHub branch data. */
 function graphFromCache(cache: RepositoryGraphCache): GraphResponse {
   const { repo, branches, commitsByBranch: cachedCommits } = cache;
   if (branches.length === 0) {
@@ -261,6 +263,7 @@ function graphFromCache(cache: RepositoryGraphCache): GraphResponse {
   }
 
   const representedMerges = new Set<string>();
+  // Merge edges are created only from direct GitHub parent metadata, never from transitive ancestry.
   branchCommits.forEach((commits, destinationBranch) => {
     commits.forEach((mergeCommit) => {
       const parents = mergeCommit.parents ?? [];
@@ -323,6 +326,7 @@ function graphFromCache(cache: RepositoryGraphCache): GraphResponse {
     branchesByCommitSet.set(key, [...(branchesByCommitSet.get(key) ?? []), branchName]);
   });
 
+  // Identical histories need a deterministic branch-level tie-breaker without changing commit edges.
   branchesByCommitSet.forEach((matchingBranches) => {
     if (matchingBranches.length < 2) {
       return;
@@ -398,6 +402,7 @@ function graphFromCache(cache: RepositoryGraphCache): GraphResponse {
   };
 }
 
+/** Loads the default branch set and returns the initial repository graph. */
 export async function buildRepositoryGraph(repoUrl: string, maxCommits: number): Promise<GraphResponse> {
   const repo = parseGitHubRepoUrl(repoUrl);
   const branches = (await getBranches(repo)).sort(compareBranches);
@@ -417,6 +422,7 @@ export async function buildRepositoryGraph(repoUrl: string, maxCommits: number):
   return graphFromCache(cache);
 }
 
+/** Loads additional branch histories into the existing repository graph cache. */
 export async function loadRepositoryBranches(
   repoUrl: string,
   maxCommits: number,
@@ -432,6 +438,7 @@ export async function loadRepositoryBranches(
   return graphFromCache(cache);
 }
 
+/** Refreshes the selected visible branches while preserving the graph cache contract. */
 export async function refreshRepositoryBranches(
   repoUrl: string,
   maxCommits: number,
