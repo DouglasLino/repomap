@@ -68,6 +68,27 @@ function branchGroup(branch: string): string {
   return (separatorIndex > 0 ? branch.slice(0, separatorIndex) : branch).trim().toLowerCase();
 }
 
+function isProjectBaseBranch(branch: string): boolean {
+  const lastSegment = branch.split("/").pop()?.toLowerCase() ?? "";
+  return [
+    "main",
+    "master",
+    "development",
+    "dev",
+    "qa",
+    "staging",
+    "prod",
+    "production"
+  ].includes(lastSegment);
+}
+
+function isProjectChildBranch(branch: string): boolean {
+  return branch
+    .toLowerCase()
+    .split("/")
+    .some((segment) => ["feature", "bugfix", "hotfix", "release", "task", "fix"].includes(segment));
+}
+
 function projectEnvironmentRank(branch: string): number {
   const lastSegment = branch.split("/").pop()?.toLowerCase() ?? "";
 
@@ -99,6 +120,14 @@ function groupedBranches(branches: string[]): string[] {
 
       if (leftGroup !== rightGroup) {
         return leftGroup.localeCompare(rightGroup);
+      }
+
+      const leftIsBase = isProjectBaseBranch(left);
+      const rightIsBase = isProjectBaseBranch(right);
+      const leftIsChild = isProjectChildBranch(left);
+      const rightIsChild = isProjectChildBranch(right);
+      if (leftIsBase !== rightIsBase && (leftIsChild || rightIsChild)) {
+        return leftIsBase ? -1 : 1;
       }
 
       const leftRank = projectEnvironmentRank(left);

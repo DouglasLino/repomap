@@ -70,10 +70,74 @@ function isPrimaryEnvironmentBranch(branchName: string): boolean {
   return ["development", "develop", "dev", "qa"].includes(branchName.toLowerCase());
 }
 
+function branchProject(branchName: string): string {
+  const separatorIndex = branchName.indexOf("/");
+  return separatorIndex > 0 ? branchName.slice(0, separatorIndex).toLowerCase() : "";
+}
+
+function lastBranchSegment(branchName: string): string {
+  return branchName.split("/").pop()?.toLowerCase() ?? branchName.toLowerCase();
+}
+
+function isBaseBranch(branchName: string): boolean {
+  return [
+    "main",
+    "master",
+    "development",
+    "dev",
+    "qa",
+    "staging",
+    "prod",
+    "production"
+  ].includes(lastBranchSegment(branchName));
+}
+
+function isChildBranch(branchName: string): boolean {
+  return branchName
+    .toLowerCase()
+    .split("/")
+    .some((segment) => ["feature", "bugfix", "hotfix", "release", "task", "fix"].includes(segment));
+}
+
 function addEdge(edges: Map<string, GraphEdge>, edge: GraphEdge): void {
   if (!edges.has(edge.id)) {
     edges.set(edge.id, edge);
   }
+}
+
+function branchFromNode(node: GraphNode | undefined): string | null {
+  return node?.branch ?? null;
+}
+
+function hasBranchEvidence(
+  edges: Map<string, GraphEdge>,
+  nodes: Map<string, GraphNode>,
+  leftBranch: string,
+  rightBranch: string
+): boolean {
+  return Array.from(edges.values()).some((edge) => {
+    const sourceBranch = branchFromNode(nodes.get(edge.source));
+    const targetBranch = branchFromNode(nodes.get(edge.target));
+    return (
+      (sourceBranch === leftBranch && targetBranch === rightBranch)
+      || (sourceBranch === rightBranch && targetBranch === leftBranch)
+    );
+  });
+}
+
+function hasIncomingBranchInference(edges: Map<string, GraphEdge>, branchName: string): boolean {
+  return Array.from(edges.values()).some((edge) => (
+    edge.target === `branch:${branchName}`
+    && (edge.type === "branch_possible" || edge.type === "branch_assumed")
+  ));
+}
+
+function commitSetKey(commits: GitHubCommit[]): string | null {
+  if (commits.length === 0) {
+    return null;
+  }
+
+  return commits.map((commit) => commit.sha).sort().join("|");
 }
 
 function graphCacheKey(repo: RepositoryRef, maxCommits: number): string {
@@ -207,6 +271,50 @@ function graphFromCache(cache: RepositoryGraphCache): GraphResponse {
     });
   });
 
+  const branchesByCommitSet = new Map<string, string[]>();
+  branchCommits.forEach((commits, branchName) => {
+    const key = commitSetKey(commits);
+    if (!key) {
+      return;
+    }
+
+    branchesByCommitSet.set(key, [...(branchesByCommitSet.get(key) ?? []), branchName]);
+  });
+
+  branchesByCommitSet.forEach((matchingBranches) => {
+    if (matchingBranches.length < 2) {
+      return;
+    }
+
+    const bases = matchingBranches.filter(isBaseBranch);
+    if (bases.length === 0) {
+      return;
+    }
+
+    matchingBranches
+      .filter((branchName) => isChildBranch(branchName))
+      .forEach((childBranch) => {
+        const childProject = branchProject(childBranch);
+        const parentBranch = bases.find((baseBranch) => (
+          baseBranch !== childBranch
+          && branchProject(baseBranch) === childProject
+          && !hasBranchEvidence(edges, nodes, baseBranch, childBranch)
+        ));
+
+        if (!parentBranch) {
+          return;
+        }
+
+        addEdge(edges, {
+          id: `branch_possible:identical-history:${parentBranch}:${childBranch}`,
+          source: `branch:${parentBranch}`,
+          target: `branch:${childBranch}`,
+          type: "branch_possible",
+          branch: childBranch
+        });
+      });
+  });
+
   const parentBranch = Array.from(branchHeads.keys()).find((branch) => branch.toLowerCase() === "main")
     ?? Array.from(branchHeads.keys()).find((branch) => branch.toLowerCase() === "master");
 
@@ -214,6 +322,9 @@ function graphFromCache(cache: RepositoryGraphCache): GraphResponse {
     const parentHead = branchHeads.get(parentBranch) as string;
     branchHeads.forEach((childHead, childBranch) => {
       if (childBranch === parentBranch) {
+        return;
+      }
+      if (hasIncomingBranchInference(edges, childBranch)) {
         return;
       }
 
@@ -224,6 +335,8 @@ function graphFromCache(cache: RepositoryGraphCache): GraphResponse {
         } else if (!branchCommitShas.get(childBranch)?.has(parentHead)) {
           return;
         }
+      } else if (!branchCommitShas.get(childBranch)?.has(parentHead)) {
+        return;
       }
 
       addEdge(edges, {
