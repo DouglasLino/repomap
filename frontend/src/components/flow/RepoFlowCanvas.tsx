@@ -181,11 +181,28 @@ function graphExportBounds(nodes: RepoFlowNode[], edges: ExportEdge[] = []): Exp
     includePoint(sourcePoint);
     includePoint(targetPoint);
 
-    if (edge.data?.graphType !== "parent" && edge.data?.graphType !== "merge" && edge.data?.graphType !== "branch_commit") {
-      includePoint({
-        x: sourcePoint.x + (targetPoint.x - sourcePoint.x) / 2 - (targetPoint.y - sourcePoint.y) * 0.12,
-        y: sourcePoint.y + (targetPoint.y - sourcePoint.y) / 2 + (targetPoint.x - sourcePoint.x) * 0.12
-      });
+    const style = exportEffectiveConnectionStyle(edge);
+    const curveOffset = edge.data?.curveOffset ?? 0;
+    const sourceSide = edgeSide(edge.sourceHandle);
+    const targetSide = edgeSide(edge.targetHandle);
+
+    if (style === "taxi") {
+      if (sourceSide === "top" && targetSide === "top") {
+        const busY = exportTaxiBusY(sourcePoint.y, targetPoint.y, edge.data?.taxiLaneIndex ?? 0, curveOffset);
+        includePoint({ x: sourcePoint.x, y: busY });
+        includePoint({ x: targetPoint.x, y: busY });
+        return;
+      }
+
+      const elbow = sourcePoint.x + (targetPoint.x - sourcePoint.x) / 2 + curveOffset;
+      includePoint({ x: elbow, y: sourcePoint.y });
+      includePoint({ x: elbow, y: targetPoint.y });
+      return;
+    }
+
+    if (style === "curved") {
+      includePoint(exportCurvedControl(sourcePoint, targetPoint, curveOffset));
+      includePoint(exportTargetTangentControl(targetPoint, targetSide, 1));
     }
   });
 
@@ -217,6 +234,87 @@ function wrapCanvasText(context: CanvasRenderingContext2D, text: string, maxWidt
 function edgeSide(handleId: string | null | undefined): EdgeAnchorSide {
   const side = handleId?.split("-").pop();
   return (side as EdgeAnchorSide | undefined) ?? "bottom";
+}
+
+function isExportCommitEdge(edge: ExportEdge): boolean {
+  return edge.data?.graphType === "branch_commit"
+    || edge.data?.graphType === "parent"
+    || edge.data?.graphType === "merge";
+}
+
+function exportEffectiveConnectionStyle(edge: ExportEdge): ConnectionStyle {
+  return isExportCommitEdge(edge) ? "straight" : edge.data?.connectionStyle ?? "curved";
+}
+
+function pointBeforeTarget(from: CanvasPoint, target: CanvasPoint, distance: number): CanvasPoint {
+  const dx = target.x - from.x;
+  const dy = target.y - from.y;
+  const length = Math.sqrt(dx * dx + dy * dy) || 1;
+
+  return {
+    x: target.x - (dx / length) * distance,
+    y: target.y - (dy / length) * distance
+  };
+}
+
+function exportLineTargetPoint(source: CanvasPoint, target: CanvasPoint, targetSide: EdgeAnchorSide, scale: number): CanvasPoint {
+  const arrowBodyLength = 9 * scale;
+
+  if (targetSide === "top") {
+    return { x: target.x, y: target.y - arrowBodyLength };
+  }
+  if (targetSide === "bottom") {
+    return { x: target.x, y: target.y + arrowBodyLength };
+  }
+  if (targetSide === "left") {
+    return { x: target.x - arrowBodyLength, y: target.y };
+  }
+  if (targetSide === "right") {
+    return { x: target.x + arrowBodyLength, y: target.y };
+  }
+
+  return pointBeforeTarget(source, target, arrowBodyLength);
+}
+
+function exportOrthogonalLastPoint(source: CanvasPoint, target: CanvasPoint, curveOffset: number): CanvasPoint {
+  return {
+    x: source.x + (target.x - source.x) / 2 + curveOffset,
+    y: target.y
+  };
+}
+
+function exportTaxiBusY(sourceY: number, targetY: number, laneIndex = 0, curveOffset = 0): number {
+  const laneHeight = 54 + laneIndex * 28;
+
+  return Math.min(sourceY, targetY) - laneHeight + curveOffset;
+}
+
+function exportCurvedControl(source: CanvasPoint, target: CanvasPoint, curveOffset: number): CanvasPoint {
+  const midX = source.x + (target.x - source.x) / 2;
+  const midY = source.y + (target.y - source.y) / 2;
+  const dx = target.x - source.x;
+  const dy = target.y - source.y;
+  const length = Math.sqrt(dx * dx + dy * dy) || 1;
+
+  return {
+    x: midX + (-dy / length) * curveOffset,
+    y: midY + (dx / length) * curveOffset
+  };
+}
+
+function exportTargetTangentControl(target: CanvasPoint, targetSide: EdgeAnchorSide, scale: number): CanvasPoint {
+  const tangentLength = 34 * scale;
+
+  if (targetSide === "top") {
+    return { x: target.x, y: target.y - tangentLength };
+  }
+  if (targetSide === "bottom") {
+    return { x: target.x, y: target.y + tangentLength };
+  }
+  if (targetSide === "left") {
+    return { x: target.x - tangentLength, y: target.y };
+  }
+  return { x: target.x + tangentLength, y: target.y };
 }
 
 function exportHandlePoint(node: RepoFlowNode, handleId: string | null | undefined, transform: ExportTransform): CanvasPoint {
@@ -271,17 +369,30 @@ function drawExportEdge(
   const color = edge.data?.color ?? "#2563eb";
   const sourcePoint = exportHandlePoint(source, edge.sourceHandle, transform);
   const targetPoint = exportHandlePoint(target, edge.targetHandle, transform);
-  const dx = targetPoint.x - sourcePoint.x;
-  const dy = targetPoint.y - sourcePoint.y;
-  const distance = Math.sqrt(dx * dx + dy * dy) || 1;
-  const arrowTarget = {
-    x: targetPoint.x - (dx / distance) * 9 * transform.scale,
-    y: targetPoint.y - (dy / distance) * 9 * transform.scale
-  };
-  const control = {
-    x: sourcePoint.x + dx / 2 - dy * 0.12,
-    y: sourcePoint.y + dy / 2 + dx * 0.12
-  };
+  const targetSide = edgeSide(edge.targetHandle);
+  const style = exportEffectiveConnectionStyle(edge);
+  const curveOffset = (edge.data?.curveOffset ?? 0) * transform.scale;
+  const shouldUseTaxiBus = style === "taxi"
+    && edgeSide(edge.sourceHandle) === "top"
+    && targetSide === "top";
+  const busY = shouldUseTaxiBus
+    ? exportTaxiBusY(sourcePoint.y, targetPoint.y, edge.data?.taxiLaneIndex ?? 0, curveOffset)
+    : null;
+  const taxiPreviousPoint = busY === null
+    ? exportOrthogonalLastPoint(sourcePoint, targetPoint, curveOffset)
+    : { x: targetPoint.x, y: busY };
+  const lineTarget = style === "straight"
+    ? pointBeforeTarget(sourcePoint, targetPoint, 9 * transform.scale)
+    : style === "taxi"
+      ? pointBeforeTarget(taxiPreviousPoint, targetPoint, 9 * transform.scale)
+      : exportLineTargetPoint(sourcePoint, targetPoint, targetSide, transform.scale);
+  const control = exportCurvedControl(sourcePoint, lineTarget, curveOffset || 42 * transform.scale);
+  const targetControl = exportTargetTangentControl(lineTarget, targetSide, transform.scale);
+  const arrowSource = style === "taxi"
+    ? taxiPreviousPoint
+    : style === "curved"
+      ? targetControl
+      : sourcePoint;
 
   context.save();
   context.strokeStyle = color;
@@ -292,14 +403,25 @@ function drawExportEdge(
   context.setLineDash(edge.data?.graphType === "branch_possible" ? [10 * transform.scale, 8 * transform.scale] : []);
   context.beginPath();
   context.moveTo(sourcePoint.x, sourcePoint.y);
-  if (edge.data?.graphType === "parent" || edge.data?.graphType === "merge" || edge.data?.graphType === "branch_commit") {
-    context.lineTo(arrowTarget.x, arrowTarget.y);
+  if (style === "straight") {
+    context.lineTo(lineTarget.x, lineTarget.y);
+  } else if (style === "taxi") {
+    if (busY === null) {
+      const elbowX = sourcePoint.x + (lineTarget.x - sourcePoint.x) / 2 + curveOffset;
+      context.lineTo(elbowX, sourcePoint.y);
+      context.lineTo(elbowX, lineTarget.y);
+      context.lineTo(lineTarget.x, lineTarget.y);
+    } else {
+      context.lineTo(sourcePoint.x, busY);
+      context.lineTo(lineTarget.x, busY);
+      context.lineTo(lineTarget.x, lineTarget.y);
+    }
   } else {
-    context.quadraticCurveTo(control.x, control.y, arrowTarget.x, arrowTarget.y);
+    context.bezierCurveTo(control.x, control.y, targetControl.x, targetControl.y, lineTarget.x, lineTarget.y);
   }
   context.stroke();
   context.setLineDash([]);
-  drawArrow(context, sourcePoint, targetPoint, color, transform.scale);
+  drawArrow(context, arrowSource, targetPoint, color, transform.scale);
   context.restore();
 }
 
