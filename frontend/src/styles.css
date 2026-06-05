@@ -139,7 +139,6 @@ h1 {
   padding: 0;
   border: 0;
   background: rgba(226, 232, 240, 0.48);
-  backdrop-filter: blur(4px);
   cursor: default;
   animation: history-backdrop-in 220ms ease;
 }
@@ -484,7 +483,7 @@ h1 {
 }
 
 .repo-flow-node-exiting .repo-flow-node {
-  transform: scale(0.82);
+  opacity: 0;
 }
 
 .repo-flow-edge-exiting,
@@ -504,13 +503,12 @@ h1 {
 
 .graph-shell-history .repo-flow-canvas .react-flow__edge-path {
   transition:
-    d 220ms ease,
     stroke-width 140ms ease,
     opacity 140ms ease;
 }
 
 .graph-shell-history .repo-flow-canvas .react-flow__node {
-  transition: transform 220ms ease, opacity 160ms ease;
+  transition: opacity 160ms ease;
 }
 
 .graph-shell-dragging .repo-flow-canvas .react-flow__edge-path,
@@ -926,7 +924,6 @@ h1 {
   border: 1px solid #dbe4ef;
   border-radius: 999px;
   box-shadow: 0 7px 20px rgba(15, 23, 42, 0.14);
-  backdrop-filter: blur(4px);
   transform: translateX(-50%);
   animation: history-controls-in 220ms ease;
 }

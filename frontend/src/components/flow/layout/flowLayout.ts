@@ -170,7 +170,7 @@ function commitPosition(
   graph: GraphResponse,
   branches: string[],
   orientation: FlowOrientation,
-  visibleNodeIds?: Set<string>
+  positionNodeIds?: Set<string>
 ) {
   const branch = node.branch ?? "";
   const base = branchPosition(branch, branches, orientation, graph);
@@ -178,7 +178,7 @@ function commitPosition(
     .filter((candidate) => (
       candidate.type === "commit"
       && candidate.branch === branch
-      && (!visibleNodeIds || visibleNodeIds.has(candidate.id))
+      && (!positionNodeIds || positionNodeIds.has(candidate.id))
     ))
     .sort((left, right) => {
       const leftTime = left.date ? new Date(left.date).getTime() : 0;
@@ -211,7 +211,8 @@ export function buildFlowElements({
   visibleNodeIds,
   visibleEdgeIds,
   fadingNodeIds,
-  fadingEdgeIds
+  fadingEdgeIds,
+  layoutNodeIds
 }: {
   graph: GraphResponse;
   visibleBranches: string[];
@@ -225,9 +226,13 @@ export function buildFlowElements({
   visibleEdgeIds?: Set<string>;
   fadingNodeIds?: Set<string>;
   fadingEdgeIds?: Set<string>;
+  layoutNodeIds?: Set<string> | null;
 }): { nodes: RepoFlowNode[]; edges: RepoFlowEdge[] } {
   const branchSet = new Set(visibleBranches);
   const expandedBranchSet = new Set(expandedCommitBranches);
+  const positionNodeIds = layoutNodeIds === null
+    ? undefined
+    : layoutNodeIds ?? visibleNodeIds;
   const nodes = graph.nodes
     .filter((node) => {
       const branch = node.branch ?? "";
@@ -243,7 +248,7 @@ export function buildFlowElements({
       const branch = node.branch ?? node.label;
       const position = node.type === "branch"
         ? branchPosition(branch, visibleBranches, orientation, graph)
-        : commitPosition(node, graph, visibleBranches, orientation, visibleNodeIds);
+        : commitPosition(node, graph, visibleBranches, orientation, positionNodeIds);
 
       return {
         id: node.id,

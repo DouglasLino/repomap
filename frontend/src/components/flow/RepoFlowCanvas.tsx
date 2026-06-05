@@ -42,6 +42,7 @@ import type {
   EdgeAnchorSide,
   EdgeEditState,
   FlowOrientation,
+  RepoFlowEdge,
   RepoFlowNode,
 } from "./types";
 import { Button } from "primereact/button";
@@ -74,6 +75,84 @@ type HistoryRenderSets = {
 
 const commitNodeWidth = 136;
 const commitNodeHeight = 70;
+
+function samePosition(left: XYPosition, right: XYPosition): boolean {
+  return left.x === right.x && left.y === right.y;
+}
+
+function sameFlowNode(left: RepoFlowNode, right: RepoFlowNode): boolean {
+  return (
+    left.id === right.id &&
+    left.type === right.type &&
+    left.className === right.className &&
+    left.draggable === right.draggable &&
+    samePosition(left.position, right.position) &&
+    left.data.graphNode === right.data.graphNode &&
+    left.data.label === right.data.label &&
+    left.data.branch === right.data.branch &&
+    left.data.color === right.data.color &&
+    left.data.message === right.data.message
+  );
+}
+
+function sameFlowEdge(left: RepoFlowEdge, right: RepoFlowEdge): boolean {
+  return (
+    left.id === right.id &&
+    left.source === right.source &&
+    left.target === right.target &&
+    left.sourceHandle === right.sourceHandle &&
+    left.targetHandle === right.targetHandle &&
+    left.type === right.type &&
+    left.animated === right.animated &&
+    left.selectable === right.selectable &&
+    left.selected === right.selected &&
+    left.data?.graphType === right.data?.graphType &&
+    left.data?.branch === right.data?.branch &&
+    left.data?.color === right.data?.color &&
+    left.data?.connectionStyle === right.data?.connectionStyle &&
+    left.data?.orientation === right.data?.orientation &&
+    left.data?.curveOffset === right.data?.curveOffset &&
+    left.data?.taxiLaneIndex === right.data?.taxiLaneIndex &&
+    left.data?.editableAnchors === right.data?.editableAnchors &&
+    left.data?.exiting === right.data?.exiting
+  );
+}
+
+function reuseStableNodes(nextNodes: RepoFlowNode[], previousNodes: RepoFlowNode[]): RepoFlowNode[] {
+  const previousById = new Map(previousNodes.map((node) => [node.id, node]));
+  let changed = nextNodes.length !== previousNodes.length;
+  const stableNodes = nextNodes.map((node, index) => {
+    const previous = previousById.get(node.id);
+    if (!previous || !sameFlowNode(node, previous)) {
+      changed = true;
+      return node;
+    }
+    if (previousNodes[index]?.id !== node.id) {
+      changed = true;
+    }
+    return previous;
+  });
+
+  return changed ? stableNodes : previousNodes;
+}
+
+function reuseStableEdges(nextEdges: RepoFlowEdge[], previousEdges: RepoFlowEdge[]): RepoFlowEdge[] {
+  const previousById = new Map(previousEdges.map((edge) => [edge.id, edge]));
+  let changed = nextEdges.length !== previousEdges.length;
+  const stableEdges = nextEdges.map((edge, index) => {
+    const previous = previousById.get(edge.id);
+    if (!previous || !sameFlowEdge(edge, previous)) {
+      changed = true;
+      return edge;
+    }
+    if (previousEdges[index]?.id !== edge.id) {
+      changed = true;
+    }
+    return previous;
+  });
+
+  return changed ? stableEdges : previousEdges;
+}
 
 function RepoFlowCanvasInner({
   graph,
@@ -108,6 +187,8 @@ function RepoFlowCanvasInner({
   });
   const commitsBeforeHistoryRef = useRef<string[]>([]);
   const shouldFitRef = useRef(false);
+  const edgesRef = useRef<RepoFlowEdge[]>([]);
+  const displayEdgesRef = useRef<RepoFlowEdge[]>([]);
   const branchDragRef = useRef<{
     branchNodeId: string;
     branch: string;
@@ -256,6 +337,7 @@ function RepoFlowCanvasInner({
       visibleEdgeIds: historyRenderSets?.edgeIds,
       fadingNodeIds: historyRenderSets?.fadingNodeIds,
       fadingEdgeIds: historyRenderSets?.fadingEdgeIds,
+      layoutNodeIds: historyMode ? null : undefined,
     });
   }, [
     branches,
@@ -263,24 +345,27 @@ function RepoFlowCanvasInner({
     expandedCommitBranches,
     graph,
     historyRenderSets,
+    historyMode,
     orientation,
   ]);
 
   useEffect(() => {
-    setFlowNodes(
+    setFlowNodes((current) => reuseStableNodes(
       baseElements.nodes.map((node) => ({
         ...node,
         position: nodePositions[node.id] ?? node.position,
       })),
-    );
+      current,
+    ));
   }, [baseElements.nodes, nodePositions]);
 
   const nodes = flowNodes;
 
   const edges = useMemo(
-    () =>
-      baseElements.edges.map((edge) => {
+    () => {
+      const nextEdges = baseElements.edges.map<RepoFlowEdge>((edge) => {
         const edit = edgeEdits[edge.id];
+        const edgeData = edge.data as NonNullable<RepoFlowEdge["data"]>;
 
         return {
           ...edge,
@@ -291,15 +376,36 @@ function RepoFlowCanvasInner({
             ? `target-${edit.targetSide}`
             : edge.targetHandle,
           data: {
-            ...edge.data,
+            graphType: edgeData.graphType,
+            branch: edgeData.branch,
+            color: edgeData.color,
+            connectionStyle: edgeData.connectionStyle,
+            orientation: edgeData.orientation,
+            taxiLaneIndex: edgeData.taxiLaneIndex,
+            editableAnchors: edgeData.editableAnchors,
+            exiting: edgeData.exiting,
             curveOffset: edit?.curveOffset ?? 0,
             onCurveChange: changeEdgeCurve,
             onAnchorChange: changeEdgeAnchor,
           },
         };
-      }),
+      });
+      const stableEdges = reuseStableEdges(nextEdges, edgesRef.current);
+      edgesRef.current = stableEdges;
+      return stableEdges;
+    },
     [baseElements.edges, edgeEdits],
   );
+
+  const displayEdges = useMemo(() => {
+    const nextEdges = edges.map((edge) => ({
+      ...edge,
+      selected: edge.id === selectedEdgeId,
+    }));
+    const stableEdges = reuseStableEdges(nextEdges, displayEdgesRef.current);
+    displayEdgesRef.current = stableEdges;
+    return stableEdges;
+  }, [edges, selectedEdgeId]);
 
   useEffect(() => {
     if (historyMode) {
@@ -756,10 +862,7 @@ function RepoFlowCanvasInner({
           />
           <ReactFlow
             nodes={nodes}
-            edges={edges.map((edge) => ({
-              ...edge,
-              selected: edge.id === selectedEdgeId,
-            }))}
+            edges={displayEdges}
             nodeTypes={nodeTypes}
             edgeTypes={edgeTypes}
             minZoom={0.2}
