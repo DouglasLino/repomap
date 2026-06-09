@@ -13,7 +13,9 @@ interface RepositoryGraphCache {
   repo: RepositoryRef;
   branches: GitHubBranch[];
   commitsByBranch: Map<string, GitHubCommit[]>;
+  commitLimitsByBranch: Map<string, number>;
   relationshipCommitsByBranch: Map<string, GitHubCommit[]>;
+  relationshipCommitLimitsByBranch: Map<string, number>;
   maxCommits: number;
 }
 
@@ -24,13 +26,14 @@ function commitId(branchName: string, sha: string): string {
   return `commit:${branchName}:${sha}`;
 }
 
-function commitNode(commit: GitHubCommit, branchName: string): GraphNode {
+function commitNode(commit: GitHubCommit, branchName: string, commitIndex: number): GraphNode {
   return {
     id: commitId(branchName, commit.sha),
     label: commit.sha.slice(0, 4),
     type: "commit",
     branch: branchName,
     sha: commit.sha,
+    commitIndex,
     parentShas: (commit.parents ?? []).flatMap((parent) => parent.sha ? [parent.sha] : []),
     author: commit.commit?.author?.name ?? null,
     date: commit.commit?.author?.date ?? null,
@@ -194,8 +197,8 @@ function preferredMergeDestination(
     })[0] ?? null;
 }
 
-function graphCacheKey(repo: RepositoryRef, maxCommits: number): string {
-  return `${repo.fullName.toLowerCase()}:${maxCommits}`;
+function graphCacheKey(repo: RepositoryRef): string {
+  return repo.fullName.toLowerCase();
 }
 
 async function loadMissingBranchCommits(
@@ -204,25 +207,42 @@ async function loadMissingBranchCommits(
 ): Promise<void> {
   const availableBranches = new Set(cache.branches.map((branch) => branch.name));
   const missingBranches = Array.from(new Set(branchNames))
-    .filter((branchName) => availableBranches.has(branchName) && !cache.commitsByBranch.has(branchName));
+    .filter((branchName) => {
+      if (!availableBranches.has(branchName)) {
+        return false;
+      }
+
+      const requestedLimit = cache.commitLimitsByBranch.get(branchName) ?? 0;
+      const commits = cache.commitsByBranch.get(branchName) ?? [];
+      return requestedLimit < cache.maxCommits && commits.length >= requestedLimit;
+    });
   const missingRelationshipBranches = Array.from(new Set(branchNames))
-    .filter((branchName) => (
-      availableBranches.has(branchName)
-      && !cache.relationshipCommitsByBranch.has(branchName)
-    ));
+    .filter((branchName) => {
+      if (!availableBranches.has(branchName)) {
+        return false;
+      }
+
+      const relationshipLimit = Math.max(cache.maxCommits, relationshipHistoryCommitLimit);
+      const requestedLimit = cache.relationshipCommitLimitsByBranch.get(branchName) ?? 0;
+      const commits = cache.relationshipCommitsByBranch.get(branchName) ?? [];
+      return requestedLimit < relationshipLimit && commits.length >= requestedLimit;
+    });
 
   await Promise.all([
     ...missingBranches.map(async (branchName) => {
       const commits = await getBranchCommits(cache.repo, branchName, cache.maxCommits);
       cache.commitsByBranch.set(branchName, commits);
+      cache.commitLimitsByBranch.set(branchName, cache.maxCommits);
     }),
     ...missingRelationshipBranches.map(async (branchName) => {
+      const relationshipLimit = Math.max(cache.maxCommits, relationshipHistoryCommitLimit);
       const commits = await getBranchCommits(
         cache.repo,
         branchName,
-        Math.max(cache.maxCommits, relationshipHistoryCommitLimit)
+        relationshipLimit
       );
       cache.relationshipCommitsByBranch.set(branchName, commits);
+      cache.relationshipCommitLimitsByBranch.set(branchName, relationshipLimit);
     })
   ]);
 }
@@ -254,7 +274,7 @@ function graphFromCache(cache: RepositoryGraphCache): GraphResponse {
     const branchGraphNode = branchNode(branchName);
     nodes.set(branchGraphNode.id, branchGraphNode);
 
-    const commits = cachedCommits.get(branchName) ?? [];
+    const commits = (cachedCommits.get(branchName) ?? []).slice(0, cache.maxCommits);
     branchCommits.set(branchName, commits);
     const visibleCommitShas = new Set(commits.map((commit) => commit.sha));
     const visibleCommitIndexes = new Map(commits.map((commit, index) => [commit.sha, index]));
@@ -270,7 +290,7 @@ function graphFromCache(cache: RepositoryGraphCache): GraphResponse {
 
     commits.forEach((commit, index) => {
       const id = commitId(branchName, commit.sha);
-      nodes.set(id, commitNode(commit, branchName));
+      nodes.set(id, commitNode(commit, branchName, index));
 
       if (index === 0) {
         addEdge(edges, {
@@ -293,12 +313,22 @@ function graphFromCache(cache: RepositoryGraphCache): GraphResponse {
           - (visibleCommitIndexes.get(right.sha) ?? Number.POSITIVE_INFINITY)
         ))[0];
 
-      if (directParent) {
-        const type: GraphEdgeType = (commit.parents?.length ?? 0) > 1 ? "merge" : "parent";
+      const directParentIndex = directParent
+        ? visibleCommitIndexes.get(directParent.sha) ?? Number.POSITIVE_INFINITY
+        : Number.POSITIVE_INFINITY;
+      const nextVisibleCommit = commits[index + 1];
+      const visibleParentSha = directParentIndex === index + 1
+        ? directParent?.sha
+        : nextVisibleCommit?.sha;
+
+      if (visibleParentSha) {
+        const type: GraphEdgeType = directParentIndex === index + 1 && (commit.parents?.length ?? 0) > 1
+          ? "merge"
+          : "parent";
         addEdge(edges, {
-          id: `${type}:${branchName}:${commit.sha}:${directParent.sha}`,
+          id: `${type}:${branchName}:${commit.sha}:${visibleParentSha}`,
           source: id,
-          target: commitId(branchName, directParent.sha),
+          target: commitId(branchName, visibleParentSha),
           type,
           branch: branchName
         });
@@ -453,20 +483,24 @@ function graphFromCache(cache: RepositoryGraphCache): GraphResponse {
 export async function buildRepositoryGraph(repoUrl: string, maxCommits: number): Promise<GraphResponse> {
   const repo = parseGitHubRepoUrl(repoUrl);
   const branches = (await getBranches(repo)).sort(compareBranches);
-  const key = graphCacheKey(repo, maxCommits);
+  const key = graphCacheKey(repo);
   const previousCache = graphCaches.get(key);
   const cache: RepositoryGraphCache = {
     repo,
     branches,
     commitsByBranch: previousCache?.commitsByBranch ?? new Map(),
+    commitLimitsByBranch: previousCache?.commitLimitsByBranch ?? new Map(),
     relationshipCommitsByBranch: previousCache?.relationshipCommitsByBranch ?? new Map(),
+    relationshipCommitLimitsByBranch: previousCache?.relationshipCommitLimitsByBranch ?? new Map(),
     maxCommits
   };
 
   graphCaches.set(key, cache);
   const initialBranches = initialVisibleBranches(branches.map((branch) => branch.name));
   initialBranches.forEach((branchName) => cache.commitsByBranch.delete(branchName));
+  initialBranches.forEach((branchName) => cache.commitLimitsByBranch.delete(branchName));
   initialBranches.forEach((branchName) => cache.relationshipCommitsByBranch.delete(branchName));
+  initialBranches.forEach((branchName) => cache.relationshipCommitLimitsByBranch.delete(branchName));
   await loadMissingBranchCommits(cache, initialBranches);
   return graphFromCache(cache);
 }
@@ -478,11 +512,12 @@ export async function loadRepositoryBranches(
   branchNames: string[]
 ): Promise<GraphResponse> {
   const repo = parseGitHubRepoUrl(repoUrl);
-  const cache = graphCaches.get(graphCacheKey(repo, maxCommits));
+  const cache = graphCaches.get(graphCacheKey(repo));
   if (!cache) {
     return buildRepositoryGraph(repoUrl, maxCommits);
   }
 
+  cache.maxCommits = maxCommits;
   await loadMissingBranchCommits(cache, branchNames);
   return graphFromCache(cache);
 }
@@ -495,19 +530,23 @@ export async function refreshRepositoryBranches(
 ): Promise<GraphResponse> {
   const repo = parseGitHubRepoUrl(repoUrl);
   const branches = (await getBranches(repo)).sort(compareBranches);
-  const key = graphCacheKey(repo, maxCommits);
+  const key = graphCacheKey(repo);
   const previousCache = graphCaches.get(key);
   const cache: RepositoryGraphCache = {
     repo,
     branches,
     commitsByBranch: previousCache?.commitsByBranch ?? new Map(),
+    commitLimitsByBranch: previousCache?.commitLimitsByBranch ?? new Map(),
     relationshipCommitsByBranch: previousCache?.relationshipCommitsByBranch ?? new Map(),
+    relationshipCommitLimitsByBranch: previousCache?.relationshipCommitLimitsByBranch ?? new Map(),
     maxCommits
   };
 
   graphCaches.set(key, cache);
   branchNames.forEach((branchName) => cache.commitsByBranch.delete(branchName));
+  branchNames.forEach((branchName) => cache.commitLimitsByBranch.delete(branchName));
   branchNames.forEach((branchName) => cache.relationshipCommitsByBranch.delete(branchName));
+  branchNames.forEach((branchName) => cache.relationshipCommitLimitsByBranch.delete(branchName));
   await loadMissingBranchCommits(cache, branchNames);
   return graphFromCache(cache);
 }

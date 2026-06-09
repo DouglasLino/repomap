@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Message } from "primereact/message";
 import { NodeDetailsPanel } from "./components/NodeDetailsPanel";
 import { RepositoryForm } from "./components/RepositoryForm";
@@ -18,6 +18,7 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
+  const commitLimitRequestRef = useRef(0);
 
   useEffect(() => {
     setSelectedNode(null);
@@ -41,6 +42,58 @@ export function App() {
       setError(message);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleMaxCommitsChange(nextMaxCommits: number) {
+    const normalizedMaxCommits = Math.max(1, Math.min(500, nextMaxCommits));
+    setMaxCommits(normalizedMaxCommits);
+
+    if (!graph) {
+      return;
+    }
+
+    const loadedBranches = Array.from(new Set(
+      graph.nodes
+        .filter((node) => node.type === "commit" && node.branch)
+        .map((node) => node.branch as string)
+    ));
+
+    if (loadedBranches.length === 0) {
+      return;
+    }
+
+    const requestId = commitLimitRequestRef.current + 1;
+    commitLimitRequestRef.current = requestId;
+    setLoading(true);
+    setError(null);
+    setSyncMessage(null);
+
+    try {
+      const response = await fetchRepositoryBranches(
+        {
+          repo_url: repoUrl,
+          max_commits: normalizedMaxCommits
+        },
+        loadedBranches
+      );
+
+      if (commitLimitRequestRef.current === requestId) {
+        setGraph(response);
+      }
+    } catch (unknownError) {
+      if (commitLimitRequestRef.current !== requestId) {
+        return;
+      }
+
+      const message = unknownError instanceof Error
+        ? unknownError.message
+        : "No se pudo actualizar el limite de commits";
+      setError(message);
+    } finally {
+      if (commitLimitRequestRef.current === requestId) {
+        setLoading(false);
+      }
     }
   }
 
@@ -151,7 +204,7 @@ export function App() {
           maxCommits={maxCommits}
           loading={loading}
           onRepoUrlChange={setRepoUrl}
-          onMaxCommitsChange={setMaxCommits}
+          onMaxCommitsChange={handleMaxCommitsChange}
           onSubmit={handleGraph}
         />
       </header>

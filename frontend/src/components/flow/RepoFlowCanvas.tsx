@@ -205,10 +205,22 @@ function RepoFlowCanvasInner({
     [graph],
   );
   const initializedRepositoryRef = useRef<string | null>(null);
+  const graphShapeRef = useRef<string>("");
 
   useEffect(() => {
     if (!graph) {
       return;
+    }
+
+    const nextGraphShape = graph.nodes
+      .filter((node) => node.type === "commit")
+      .map((node) => `${node.id}:${node.commitIndex ?? ""}`)
+      .sort()
+      .join("|");
+
+    if (graphShapeRef.current !== nextGraphShape) {
+      graphShapeRef.current = nextGraphShape;
+      setNodePositions({});
     }
 
     if (initializedRepositoryRef.current !== graph.repository) {

@@ -63,10 +63,21 @@ function commitTimestamp(node: GraphNode): number {
   return Number.isFinite(timestamp) ? timestamp : 0;
 }
 
+function commitSequence(node: GraphNode): number {
+  return node.commitIndex ?? Number.POSITIVE_INFINITY;
+}
+
+function compareCommitSequence(left: GraphNode, right: GraphNode): number {
+  return (
+    commitSequence(left) - commitSequence(right)
+    || commitTimestamp(right) - commitTimestamp(left)
+  );
+}
+
 function latestVisibleCommit(branch: string, nodes: RepoFlowNode[]): RepoFlowNode | null {
   const commits = nodes
     .filter((node) => node.type === "commit" && node.data.branch === branch)
-    .sort((left, right) => commitTimestamp(right.data.graphNode) - commitTimestamp(left.data.graphNode));
+    .sort((left, right) => compareCommitSequence(left.data.graphNode, right.data.graphNode));
 
   return commits[0] ?? null;
 }
@@ -180,11 +191,7 @@ function commitPosition(
       && candidate.branch === branch
       && (!positionNodeIds || positionNodeIds.has(candidate.id))
     ))
-    .sort((left, right) => {
-      const leftTime = left.date ? new Date(left.date).getTime() : 0;
-      const rightTime = right.date ? new Date(right.date).getTime() : 0;
-      return rightTime - leftTime;
-    });
+    .sort(compareCommitSequence);
   const index = Math.max(0, commits.findIndex((candidate) => candidate.id === node.id));
 
   return orientation === "horizontal"

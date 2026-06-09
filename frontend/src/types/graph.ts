@@ -13,6 +13,7 @@ export interface GraphNode {
   type: GraphNodeType;
   branch?: string | null;
   sha?: string | null;
+  commitIndex?: number;
   parentShas?: string[];
   author?: string | null;
   date?: string | null;
