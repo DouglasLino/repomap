@@ -2,6 +2,9 @@ import type { GraphResponse } from "../../../types/graph";
 
 function environmentBranchRank(branch: string): number | null {
   const name = branch.toLowerCase();
+  if (/(^|[/_-])release([/_-]|$)/.test(name)) {
+    return -1;
+  }
   if (name.includes("/")) {
     return null;
   }
@@ -30,7 +33,12 @@ function branchGroup(branch: string): string {
 }
 
 function projectEnvironmentRank(branch: string): number {
+  const name = branch.toLowerCase();
   const lastSegment = branch.split("/").pop()?.toLowerCase() ?? "";
+
+  if (/(^|[/_-])release([/_-]|$)/.test(name)) {
+    return 99;
+  }
 
   if (/^(dev|develop)([-_].*)?$/.test(lastSegment)) {
     return 100;
@@ -96,6 +104,9 @@ function branchRelationOrder(graph: GraphResponse | null | undefined, branches: 
       return;
     }
     if (branchGroup(parentBranch) !== branchGroup(childBranch)) {
+      return;
+    }
+    if (projectEnvironmentRank(parentBranch) > projectEnvironmentRank(childBranch)) {
       return;
     }
 
