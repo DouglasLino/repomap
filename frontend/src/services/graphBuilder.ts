@@ -150,6 +150,20 @@ function commitSetKey(commits: GitHubCommit[]): string | null {
   return commits.map((commit) => commit.sha).sort().join("|");
 }
 
+function hasSharedHistory(
+  parentBranch: string,
+  childBranch: string,
+  branchCommitShas: Map<string, Set<string>>
+): boolean {
+  const parentShas = branchCommitShas.get(parentBranch);
+  const childShas = branchCommitShas.get(childBranch);
+  if (!parentShas || !childShas) {
+    return false;
+  }
+
+  return Array.from(parentShas).some((sha) => childShas.has(sha));
+}
+
 /** Chooses the branch that should own a merge commit when multiple visible branches contain it. */
 function preferredMergeDestination(
   mergeSha: string,
@@ -375,13 +389,14 @@ function graphFromCache(cache: RepositoryGraphCache): GraphResponse {
       }
 
       let type: GraphEdgeType = "branch_possible";
+      const sharesParentHistory = hasSharedHistory(parentBranch, childBranch, branchCommitShas);
       if (isPrimaryEnvironmentBranch(childBranch)) {
         if (childHead === parentHead) {
           type = "branch_assumed";
-        } else if (!branchCommitShas.get(childBranch)?.has(parentHead)) {
+        } else if (!sharesParentHistory) {
           return;
         }
-      } else if (!branchCommitShas.get(childBranch)?.has(parentHead)) {
+      } else if (!sharesParentHistory) {
         return;
       }
 
