@@ -167,25 +167,25 @@ function hasSharedHistory(
 /** Chooses the branch that should own a merge commit when multiple visible branches contain it. */
 function preferredMergeDestination(
   mergeSha: string,
-  currentBranch: string,
+  sourceBranch: string,
   branchCommitShas: Map<string, Set<string>>,
   branchCommitIndexes: Map<string, Map<string, number>>,
   branchPositions: Map<string, number>
 ): string | null {
-  const currentProject = branchProject(currentBranch);
+  const sourceProject = branchProject(sourceBranch);
   const candidates = Array.from(branchCommitShas.entries())
-    .filter(([, shas]) => shas.has(mergeSha))
+    .filter(([branchName, shas]) => branchName !== sourceBranch && shas.has(mergeSha))
     .map(([branchName]) => branchName);
 
   return candidates
     .sort((left, right) => {
-      const leftSameProject = branchProject(left) === currentProject ? 0 : 1;
-      const rightSameProject = branchProject(right) === currentProject ? 0 : 1;
+      const leftSameProject = branchProject(left) === sourceProject ? 0 : 1;
+      const rightSameProject = branchProject(right) === sourceProject ? 0 : 1;
       return (
-        (branchCommitIndexes.get(left)?.get(mergeSha) ?? Number.POSITIVE_INFINITY)
-        - (branchCommitIndexes.get(right)?.get(mergeSha) ?? Number.POSITIVE_INFINITY)
+        leftSameProject - rightSameProject
         || mergeDestinationRank(left) - mergeDestinationRank(right)
-        || leftSameProject - rightSameProject
+        || (branchCommitIndexes.get(left)?.get(mergeSha) ?? Number.POSITIVE_INFINITY)
+        - (branchCommitIndexes.get(right)?.get(mergeSha) ?? Number.POSITIVE_INFINITY)
         || (branchPositions.get(left) ?? 0) - (branchPositions.get(right) ?? 0)
         || left.localeCompare(right)
       );
@@ -289,15 +289,6 @@ function graphFromCache(cache: RepositoryGraphCache): GraphResponse {
       if (parents.length < 2 || representedMerges.has(mergeCommit.sha)) {
         return;
       }
-      if (preferredMergeDestination(
-        mergeCommit.sha,
-        destinationBranch,
-        branchCommitShas,
-        branchCommitIndexes,
-        branchPositions
-      ) !== destinationBranch) {
-        return;
-      }
 
       for (const mergedParent of parents.slice(1)) {
         if (!mergedParent.sha) {
@@ -322,6 +313,15 @@ function graphFromCache(cache: RepositoryGraphCache): GraphResponse {
           .sort((left, right) => (
             (branchPositions.get(right) ?? 0) - (branchPositions.get(left) ?? 0)
           ))[0];
+        if (preferredMergeDestination(
+          mergeCommit.sha,
+          sourceBranch,
+          branchCommitShas,
+          branchCommitIndexes,
+          branchPositions
+        ) !== destinationBranch) {
+          continue;
+        }
 
         addEdge(edges, {
           id: `pull-request-merge:${sourceBranch}:${destinationBranch}:${mergeCommit.sha}`,
