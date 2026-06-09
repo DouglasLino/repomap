@@ -169,6 +169,7 @@ function preferredMergeDestination(
   mergeSha: string,
   currentBranch: string,
   branchCommitShas: Map<string, Set<string>>,
+  branchCommitIndexes: Map<string, Map<string, number>>,
   branchPositions: Map<string, number>
 ): string | null {
   const currentProject = branchProject(currentBranch);
@@ -181,8 +182,10 @@ function preferredMergeDestination(
       const leftSameProject = branchProject(left) === currentProject ? 0 : 1;
       const rightSameProject = branchProject(right) === currentProject ? 0 : 1;
       return (
-        leftSameProject - rightSameProject
+        (branchCommitIndexes.get(left)?.get(mergeSha) ?? Number.POSITIVE_INFINITY)
+        - (branchCommitIndexes.get(right)?.get(mergeSha) ?? Number.POSITIVE_INFINITY)
         || mergeDestinationRank(left) - mergeDestinationRank(right)
+        || leftSameProject - rightSameProject
         || (branchPositions.get(left) ?? 0) - (branchPositions.get(right) ?? 0)
         || left.localeCompare(right)
       );
@@ -220,6 +223,7 @@ function graphFromCache(cache: RepositoryGraphCache): GraphResponse {
   const edges = new Map<string, GraphEdge>();
   const branchHeads = new Map<string, string>();
   const branchCommitShas = new Map<string, Set<string>>();
+  const branchCommitIndexes = new Map<string, Map<string, number>>();
   const branchCommits = new Map<string, GitHubCommit[]>();
   const branchPositions = new Map<string, number>();
 
@@ -234,6 +238,7 @@ function graphFromCache(cache: RepositoryGraphCache): GraphResponse {
     const commitShas = new Set(commits.map((commit) => commit.sha));
     const commitIndexes = new Map(commits.map((commit, index) => [commit.sha, index]));
     branchCommitShas.set(branchName, commitShas);
+    branchCommitIndexes.set(branchName, commitIndexes);
     if (commits.length > 0) {
       branchHeads.set(branchName, commits[0].sha);
     }
@@ -288,6 +293,7 @@ function graphFromCache(cache: RepositoryGraphCache): GraphResponse {
         mergeCommit.sha,
         destinationBranch,
         branchCommitShas,
+        branchCommitIndexes,
         branchPositions
       ) !== destinationBranch) {
         return;
