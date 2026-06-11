@@ -49,7 +49,7 @@ h1 {
 
 .repo-form {
   display: grid;
-  grid-template-columns: minmax(260px, 1fr) 150px auto;
+  grid-template-columns: minmax(260px, 1fr) minmax(160px, 220px) 150px auto;
   gap: 12px;
   align-items: end;
 }
@@ -73,11 +73,13 @@ h1 {
   font-size: 18px;
 }
 
+.github-token-field,
 .max-commits-field {
   display: grid;
   gap: 6px;
 }
 
+.github-token-field label,
 .max-commits-field label {
   color: #475569;
   font-size: 12px;

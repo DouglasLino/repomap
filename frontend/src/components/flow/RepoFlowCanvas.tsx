@@ -268,13 +268,13 @@ function RepoFlowCanvasInner({
         : initialVisibleBranches(allBranches),
     [allBranches, selectedBranches],
   );
-  const historyEvents = useMemo(() => buildHistoryEvents(graph), [graph]);
+  const historyEvents = useMemo(() => buildHistoryEvents(graph, branches), [branches, graph]);
   const historySets = useMemo(() => {
     if (!graph || !historyMode) {
       return null;
     }
-    return visibleHistorySets(graph, historyEvents, historyStep);
-  }, [graph, historyEvents, historyMode, historyStep]);
+    return visibleHistorySets(graph, historyEvents, historyStep, branches);
+  }, [branches, graph, historyEvents, historyMode, historyStep]);
 
   useEffect(() => {
     if (!historyMode || !historySets) {

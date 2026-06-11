@@ -11,6 +11,7 @@ import { initialVisibleBranches } from "./branchSelection";
 
 interface RepositoryGraphCache {
   repo: RepositoryRef;
+  githubToken?: string;
   branches: GitHubBranch[];
   commitsByBranch: Map<string, GitHubCommit[]>;
   commitLimitsByBranch: Map<string, number>;
@@ -197,8 +198,12 @@ function preferredMergeDestination(
     })[0] ?? null;
 }
 
-function graphCacheKey(repo: RepositoryRef): string {
-  return repo.fullName.toLowerCase();
+function normalizedGithubToken(githubToken?: string): string {
+  return githubToken?.trim() ?? "";
+}
+
+function graphCacheKey(repo: RepositoryRef, githubToken?: string): string {
+  return `${repo.fullName.toLowerCase()}:${normalizedGithubToken(githubToken)}`;
 }
 
 async function loadMissingBranchCommits(
@@ -230,7 +235,7 @@ async function loadMissingBranchCommits(
 
   await Promise.all([
     ...missingBranches.map(async (branchName) => {
-      const commits = await getBranchCommits(cache.repo, branchName, cache.maxCommits);
+      const commits = await getBranchCommits(cache.repo, branchName, cache.maxCommits, cache.githubToken);
       cache.commitsByBranch.set(branchName, commits);
       cache.commitLimitsByBranch.set(branchName, cache.maxCommits);
     }),
@@ -239,7 +244,8 @@ async function loadMissingBranchCommits(
       const commits = await getBranchCommits(
         cache.repo,
         branchName,
-        relationshipLimit
+        relationshipLimit,
+        cache.githubToken
       );
       cache.relationshipCommitsByBranch.set(branchName, commits);
       cache.relationshipCommitLimitsByBranch.set(branchName, relationshipLimit);
@@ -480,13 +486,19 @@ function graphFromCache(cache: RepositoryGraphCache): GraphResponse {
 }
 
 /** Loads the default branch set and returns the initial repository graph. */
-export async function buildRepositoryGraph(repoUrl: string, maxCommits: number): Promise<GraphResponse> {
+export async function buildRepositoryGraph(
+  repoUrl: string,
+  maxCommits: number,
+  githubToken?: string
+): Promise<GraphResponse> {
   const repo = parseGitHubRepoUrl(repoUrl);
-  const branches = (await getBranches(repo)).sort(compareBranches);
-  const key = graphCacheKey(repo);
+  const token = normalizedGithubToken(githubToken);
+  const branches = (await getBranches(repo, 100, token)).sort(compareBranches);
+  const key = graphCacheKey(repo, token);
   const previousCache = graphCaches.get(key);
   const cache: RepositoryGraphCache = {
     repo,
+    githubToken: token,
     branches,
     commitsByBranch: previousCache?.commitsByBranch ?? new Map(),
     commitLimitsByBranch: previousCache?.commitLimitsByBranch ?? new Map(),
@@ -509,14 +521,17 @@ export async function buildRepositoryGraph(repoUrl: string, maxCommits: number):
 export async function loadRepositoryBranches(
   repoUrl: string,
   maxCommits: number,
-  branchNames: string[]
+  branchNames: string[],
+  githubToken?: string
 ): Promise<GraphResponse> {
   const repo = parseGitHubRepoUrl(repoUrl);
-  const cache = graphCaches.get(graphCacheKey(repo));
+  const token = normalizedGithubToken(githubToken);
+  const cache = graphCaches.get(graphCacheKey(repo, token));
   if (!cache) {
-    return buildRepositoryGraph(repoUrl, maxCommits);
+    return buildRepositoryGraph(repoUrl, maxCommits, token);
   }
 
+  cache.githubToken = token;
   cache.maxCommits = maxCommits;
   await loadMissingBranchCommits(cache, branchNames);
   return graphFromCache(cache);
@@ -526,14 +541,17 @@ export async function loadRepositoryBranches(
 export async function refreshRepositoryBranches(
   repoUrl: string,
   maxCommits: number,
-  branchNames: string[]
+  branchNames: string[],
+  githubToken?: string
 ): Promise<GraphResponse> {
   const repo = parseGitHubRepoUrl(repoUrl);
-  const branches = (await getBranches(repo)).sort(compareBranches);
-  const key = graphCacheKey(repo);
+  const token = normalizedGithubToken(githubToken);
+  const branches = (await getBranches(repo, 100, token)).sort(compareBranches);
+  const key = graphCacheKey(repo, token);
   const previousCache = graphCaches.get(key);
   const cache: RepositoryGraphCache = {
     repo,
+    githubToken: token,
     branches,
     commitsByBranch: previousCache?.commitsByBranch ?? new Map(),
     commitLimitsByBranch: previousCache?.commitLimitsByBranch ?? new Map(),

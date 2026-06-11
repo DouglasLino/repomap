@@ -12,6 +12,7 @@ import type { GraphNode, GraphResponse } from "./types/graph";
 
 export function App() {
   const [repoUrl, setRepoUrl] = useState("https://github.com/DouglasLino/testDiagramView");
+  const [githubToken, setGithubToken] = useState("");
   const [maxCommits, setMaxCommits] = useState(3);
   const [graph, setGraph] = useState<GraphResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -32,7 +33,8 @@ export function App() {
     try {
       const response = await fetchRepositoryGraph({
         repo_url: repoUrl,
-        max_commits: maxCommits
+        max_commits: maxCommits,
+        github_token: githubToken
       });
       setGraph(response);
     } catch (unknownError) {
@@ -73,7 +75,8 @@ export function App() {
       const response = await fetchRepositoryBranches(
         {
           repo_url: repoUrl,
-          max_commits: normalizedMaxCommits
+          max_commits: normalizedMaxCommits,
+          github_token: githubToken
         },
         loadedBranches
       );
@@ -110,7 +113,8 @@ export function App() {
       const response = await refreshRepositoryGraph(
         {
           repo_url: repoUrl,
-          max_commits: maxCommits
+          max_commits: maxCommits,
+          github_token: githubToken
         },
         branches
       );
@@ -177,7 +181,8 @@ export function App() {
       const response = await fetchRepositoryBranches(
         {
           repo_url: repoUrl,
-          max_commits: maxCommits
+          max_commits: maxCommits,
+          github_token: githubToken
         },
         branches
       );
@@ -201,9 +206,11 @@ export function App() {
         </div>
         <RepositoryForm
           repoUrl={repoUrl}
+          githubToken={githubToken}
           maxCommits={maxCommits}
           loading={loading}
           onRepoUrlChange={setRepoUrl}
+          onGithubTokenChange={setGithubToken}
           onMaxCommitsChange={handleMaxCommitsChange}
           onSubmit={handleGraph}
         />

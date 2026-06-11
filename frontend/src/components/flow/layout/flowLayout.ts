@@ -355,6 +355,49 @@ export function buildFlowElements({
     }));
 
   if (visibleNodeIds) {
+    const edgePairIds = new Set(edges.map((edge) => `${edge.source}->${edge.target}`));
+
+    visibleBranches.forEach((branch) => {
+      const commits = nodes
+        .filter((node) => node.type === "commit" && node.data.branch === branch)
+        .sort((left, right) => compareCommitSequence(left.data.graphNode, right.data.graphNode));
+
+      commits.slice(0, -1).forEach((commit, index) => {
+        const nextCommit = commits[index + 1];
+        const pairId = `${commit.id}->${nextCommit.id}`;
+        if (edgePairIds.has(pairId)) {
+          return;
+        }
+
+        const id = `history-continuity:${commit.id}:${nextCommit.id}`;
+        const sides = defaultEdgeSides("parent", commit.data.graphNode, nextCommit.data.graphNode, orientation);
+        edges.push({
+          id,
+          source: commit.id,
+          target: nextCommit.id,
+          sourceHandle: `source-${edgeEdits[id]?.sourceSide ?? sides.sourceSide}`,
+          targetHandle: `target-${edgeEdits[id]?.targetSide ?? sides.targetSide}`,
+          type: "repo-edge",
+          animated: false,
+          selectable: true,
+          data: {
+            graphType: "parent",
+            branch,
+            color: colorForBranch(branch, visibleBranches),
+            connectionStyle,
+            orientation,
+            curveOffset: edgeEdits[id]?.curveOffset ?? 0,
+            taxiLaneIndex: undefined,
+            editableAnchors: false,
+            exiting: false,
+            onCurveChange,
+            onAnchorChange
+          }
+        });
+        edgePairIds.add(pairId);
+      });
+    });
+
     nodes
       .filter((node) => node.type === "branch")
       .forEach((branchNode) => {

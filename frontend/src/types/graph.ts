@@ -38,4 +38,5 @@ export interface GraphResponse {
 export interface GraphRequest {
   repo_url: string;
   max_commits: number;
+  github_token?: string;
 }

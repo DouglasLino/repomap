@@ -54,15 +54,25 @@ export function parseGitHubRepoUrl(repoUrl: string): RepositoryRef {
   };
 }
 
-async function githubGet<T>(path: string, params: Record<string, string | number>): Promise<T> {
+function githubHeaders(githubToken?: string): HeadersInit {
+  const token = githubToken?.trim();
+  return {
+    Accept: "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28",
+    ...(token ? { Authorization: `Bearer ${token}` } : {})
+  };
+}
+
+async function githubGet<T>(
+  path: string,
+  params: Record<string, string | number>,
+  githubToken?: string
+): Promise<T> {
   const url = new URL(`https://api.github.com${path}`);
   Object.entries(params).forEach(([key, value]) => url.searchParams.set(key, String(value)));
 
   const response = await fetch(url, {
-    headers: {
-      Accept: "application/vnd.github+json",
-      "X-GitHub-Api-Version": "2022-11-28"
-    }
+    headers: githubHeaders(githubToken)
   });
 
   if (response.status === 404) {
@@ -83,10 +93,11 @@ async function githubGet<T>(path: string, params: Record<string, string | number
   return response.json() as Promise<T>;
 }
 
-export async function getBranches(repo: RepositoryRef, limit = 100): Promise<GitHubBranch[]> {
+export async function getBranches(repo: RepositoryRef, limit = 100, githubToken?: string): Promise<GitHubBranch[]> {
   const branches = await githubGet<GitHubBranch[]>(
     `/repos/${repo.owner}/${repo.repo}/branches`,
-    { per_page: limit }
+    { per_page: limit },
+    githubToken
   );
 
   if (!Array.isArray(branches)) {
@@ -98,11 +109,13 @@ export async function getBranches(repo: RepositoryRef, limit = 100): Promise<Git
 export async function getBranchCommits(
   repo: RepositoryRef,
   branchName: string,
-  perPage: number
+  perPage: number,
+  githubToken?: string
 ): Promise<GitHubCommit[]> {
   const commits = await githubGet<GitHubCommit[]>(
     `/repos/${repo.owner}/${repo.repo}/commits`,
-    { sha: branchName, per_page: perPage }
+    { sha: branchName, per_page: perPage },
+    githubToken
   );
 
   if (!Array.isArray(commits)) {
