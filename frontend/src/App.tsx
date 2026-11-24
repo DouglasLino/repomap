@@ -8,11 +8,17 @@ import {
   fetchRepositoryGraph,
   refreshRepositoryGraph
 } from "./services/api";
-import type { GraphNode, GraphResponse } from "./types/graph";
+import type { GraphNode, GraphResponse, RepositoryProvider } from "./types/graph";
+
+const defaultRepoUrls: Record<RepositoryProvider, string> = {
+  github: "https://github.com/DouglasLino/testDiagramView",
+  gitlab: "https://gitlab.com/DouglasLino/testdiagramview"
+};
 
 export function App() {
-  const [repoUrl, setRepoUrl] = useState("https://github.com/DouglasLino/testDiagramView");
-  const [githubToken, setGithubToken] = useState("");
+  const [provider, setProvider] = useState<RepositoryProvider>("github");
+  const [repoUrl, setRepoUrl] = useState(defaultRepoUrls.github);
+  const [accessToken, setAccessToken] = useState("");
   const [maxCommits, setMaxCommits] = useState(3);
   const [graph, setGraph] = useState<GraphResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -34,7 +40,8 @@ export function App() {
       const response = await fetchRepositoryGraph({
         repo_url: repoUrl,
         max_commits: maxCommits,
-        github_token: githubToken
+        provider,
+        access_token: accessToken
       });
       setGraph(response);
     } catch (unknownError) {
@@ -76,7 +83,8 @@ export function App() {
         {
           repo_url: repoUrl,
           max_commits: normalizedMaxCommits,
-          github_token: githubToken
+          provider,
+          access_token: accessToken
         },
         loadedBranches
       );
@@ -114,7 +122,8 @@ export function App() {
         {
           repo_url: repoUrl,
           max_commits: maxCommits,
-          github_token: githubToken
+          provider,
+          access_token: accessToken
         },
         branches
       );
@@ -182,7 +191,8 @@ export function App() {
         {
           repo_url: repoUrl,
           max_commits: maxCommits,
-          github_token: githubToken
+          provider,
+          access_token: accessToken
         },
         branches
       );
@@ -198,19 +208,33 @@ export function App() {
   }
 
   return (
-    <main className="app">
+    <main className={`app app-provider-${provider}`}>
       <header className="topbar">
         <div>
-          <span className="eyebrow">GitHub Graph Visualizer</span>
+          <span className="eyebrow">{provider === "gitlab" ? "GitLab" : "GitHub"} Graph Visualizer</span>
           <h1>repoMap</h1>
         </div>
         <RepositoryForm
+          provider={provider}
           repoUrl={repoUrl}
-          githubToken={githubToken}
+          accessToken={accessToken}
           maxCommits={maxCommits}
           loading={loading}
+          onProviderChange={(nextProvider) => {
+            const previousProvider = provider;
+            setProvider(nextProvider);
+            setRepoUrl((currentRepoUrl) =>
+              currentRepoUrl === defaultRepoUrls[previousProvider]
+                ? defaultRepoUrls[nextProvider]
+                : currentRepoUrl
+            );
+            setGraph(null);
+            setError(null);
+            setSyncMessage(null);
+            setSelectedNode(null);
+          }}
           onRepoUrlChange={setRepoUrl}
-          onGithubTokenChange={setGithubToken}
+          onAccessTokenChange={setAccessToken}
           onMaxCommitsChange={handleMaxCommitsChange}
           onSubmit={handleGraph}
         />

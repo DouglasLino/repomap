@@ -31,12 +31,16 @@ export interface GraphEdge {
 
 export interface GraphResponse {
   repository: string;
+  provider: RepositoryProvider;
   nodes: GraphNode[];
   edges: GraphEdge[];
 }
 
+export type RepositoryProvider = "github" | "gitlab";
+
 export interface GraphRequest {
   repo_url: string;
   max_commits: number;
-  github_token?: string;
+  provider?: RepositoryProvider;
+  access_token?: string;
 }

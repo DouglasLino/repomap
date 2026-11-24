@@ -1,4 +1,4 @@
-import type { GraphNode, GraphResponse } from "../../../types/graph";
+import type { GraphNode, GraphResponse, RepositoryProvider } from "../../../types/graph";
 export { initialVisibleBranches } from "../../../services/branchSelection";
 import type {
   ConnectionStyle,
@@ -22,15 +22,26 @@ export const branchNodeHeight = 42;
 export const commitNodeSize = 42;
 const commitNodeWidth = 136;
 
-const branchPalette = [
-  "#2563eb",
-  "#16a34a",
-  "#d97706",
-  "#7c3aed",
-  "#0891b2",
-  "#be123c",
-  "#4f46e5"
-];
+const providerBranchPalettes: Record<RepositoryProvider, string[]> = {
+  github: [
+    "#2563eb",
+    "#16a34a",
+    "#d97706",
+    "#7c3aed",
+    "#0891b2",
+    "#be123c",
+    "#4f46e5"
+  ],
+  gitlab: [
+    "#fc6d26",
+    "#e24329",
+    "#fca326",
+    "#7759c2",
+    "#9b51e0",
+    "#2f80ed",
+    "#27ae60"
+  ]
+};
 
 const horizontalBranchStartX = 340;
 const horizontalBranchStepX = 34;
@@ -39,11 +50,16 @@ const horizontalBranchGapY = 86;
 const horizontalCommitGapX = 122;
 const horizontalCommitCircleInset = (commitNodeWidth - commitNodeSize) / 2;
 
-export function colorForBranch(branch: string | null | undefined, branches: string[]): string {
+export function colorForBranch(
+  branch: string | null | undefined,
+  branches: string[],
+  provider: RepositoryProvider = "github"
+): string {
   if (!branch) {
     return "#64748b";
   }
 
+  const branchPalette = providerBranchPalettes[provider];
   return branchPalette[Math.max(0, branches.indexOf(branch)) % branchPalette.length];
 }
 
@@ -266,7 +282,7 @@ export function buildFlowElements({
           graphNode: node,
           label: node.type === "commit" ? shortCommitLabel(node.label) : node.label,
           branch,
-          color: colorForBranch(branch, visibleBranches),
+          color: colorForBranch(branch, visibleBranches, graph.provider),
           message: node.type === "commit" ? commitMessage(node.message) : null
         },
         draggable: true
@@ -342,7 +358,7 @@ export function buildFlowElements({
       data: {
         graphType: edge.type,
         branch: edge.branch ?? "",
-        color: colorForBranch(edge.branch, visibleBranches),
+        color: colorForBranch(edge.branch, visibleBranches, graph.provider),
         connectionStyle,
         orientation,
         curveOffset: edgeEdits[edge.id]?.curveOffset ?? 0,
@@ -383,7 +399,7 @@ export function buildFlowElements({
           data: {
             graphType: "parent",
             branch,
-            color: colorForBranch(branch, visibleBranches),
+            color: colorForBranch(branch, visibleBranches, graph.provider),
             connectionStyle,
             orientation,
             curveOffset: edgeEdits[id]?.curveOffset ?? 0,
@@ -420,7 +436,7 @@ export function buildFlowElements({
           data: {
             graphType: "branch_commit",
             branch: branchNode.data.branch,
-            color: colorForBranch(branchNode.data.branch, visibleBranches),
+            color: colorForBranch(branchNode.data.branch, visibleBranches, graph.provider),
             connectionStyle,
             orientation,
             curveOffset: edgeEdits[id]?.curveOffset ?? 0,

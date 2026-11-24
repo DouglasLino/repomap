@@ -837,7 +837,7 @@ function RepoFlowCanvasInner({
             <BranchSelector
               branches={allBranches}
               selectedBranches={branches}
-              branchColor={(branch) => colorForBranch(branch, allBranches)}
+              branchColor={(branch) => colorForBranch(branch, allBranches, graph.provider)}
               onSelectionChange={changeBranchSelection}
             />
           </div>

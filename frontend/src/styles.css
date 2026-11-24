@@ -1,9 +1,24 @@
 :root {
+  --accent-color: #2563eb;
+  --accent-color-strong: #1d4ed8;
+  --accent-color-soft: #bfdbfe;
+  --accent-surface: #eff6ff;
+  --accent-shadow: rgba(37, 99, 235, 0.3);
+  --accent-shadow-soft: rgba(37, 99, 235, 0.2);
   color: #0f172a;
   background: #eef2f7;
   font-family:
     Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
     sans-serif;
+}
+
+.app-provider-gitlab {
+  --accent-color: #fc6d26;
+  --accent-color-strong: #e24329;
+  --accent-color-soft: #fed7aa;
+  --accent-surface: #fff7ed;
+  --accent-shadow: rgba(252, 109, 38, 0.3);
+  --accent-shadow-soft: rgba(252, 109, 38, 0.2);
 }
 
 * {
@@ -34,7 +49,7 @@ body {
 
 .eyebrow {
   display: block;
-  color: #2563eb;
+  color: var(--accent-color);
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -60,11 +75,84 @@ h1 {
   width: 100%;
 }
 
+/* PrimeReact keeps its theme blue unless these controls explicitly inherit the
+   provider accent set on .app. */
+.repo-form .p-inputnumber-button,
+.repo-form > .p-button {
+  background: var(--accent-color);
+  border-color: var(--accent-color);
+}
+
+.repo-form .p-inputnumber-button:not(:disabled):hover,
+.repo-form > .p-button:not(:disabled):hover {
+  background: var(--accent-color-strong);
+  border-color: var(--accent-color-strong);
+}
+
+.repo-form .p-inputnumber-input:enabled:focus {
+  border-color: var(--accent-color);
+  box-shadow: 0 0 0 0.2rem var(--accent-shadow-soft);
+}
+
 .repo-url-field {
   display: flex;
   align-items: center;
   gap: 9px;
   width: 100%;
+}
+
+.repo-provider-toggle {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: repeat(2, 30px);
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid #dbe4ef;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.repo-provider-option {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  color: #64748b;
+  background: transparent;
+  cursor: pointer;
+  transition:
+    background 150ms ease,
+    color 150ms ease,
+    box-shadow 150ms ease;
+}
+
+.repo-provider-option:hover {
+  color: #334155;
+  background: #eef2f7;
+}
+
+.repo-provider-option-active {
+  color: #ffffff;
+  background: var(--accent-color);
+  box-shadow: 0 6px 14px var(--accent-shadow-soft);
+}
+
+.repo-provider-option-active:hover {
+  color: #ffffff;
+  background: var(--accent-color-strong);
+}
+
+.repo-provider-option .pi {
+  font-size: 17px;
+}
+
+.repo-provider-option-gitlab span {
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
 }
 
 .repo-url-icon {
@@ -73,13 +161,13 @@ h1 {
   font-size: 18px;
 }
 
-.github-token-field,
+.provider-token-field,
 .max-commits-field {
   display: grid;
   gap: 6px;
 }
 
-.github-token-field label,
+.provider-token-field label,
 .max-commits-field label {
   color: #475569;
   font-size: 12px;
@@ -107,7 +195,7 @@ h1 {
 
 .graph-empty .pi {
   font-size: 42px;
-  color: #2563eb;
+  color: var(--accent-color);
 }
 
 .graph-empty h2 {
@@ -147,10 +235,10 @@ h1 {
 
 .graph-shell-history {
   z-index: 10;
-  border-color: #2563eb;
+  border-color: var(--accent-color);
   box-shadow:
-    0 0 0 1px rgba(37, 99, 235, 0.2),
-    0 0 24px rgba(37, 99, 235, 0.3),
+    0 0 0 1px var(--accent-shadow-soft),
+    0 0 24px var(--accent-shadow),
     0 12px 42px rgba(15, 23, 42, 0.16);
 }
 
@@ -537,8 +625,8 @@ h1 {
 .repo-flow-edge-curve-edit {
   width: 15px;
   height: 15px;
-  border-color: #2563eb;
-  background: #2563eb;
+  border-color: var(--accent-color);
+  background: var(--accent-color);
 }
 
 .repo-flow-edge-anchor-edit {
@@ -584,24 +672,24 @@ h1 {
 
 .utility-menu .utility-button.p-button:hover,
 .utility-menu .utility-button.p-button:focus-visible {
-  color: #2563eb;
+  color: var(--accent-color);
   background: rgba(255, 255, 255, 0.92);
-  border-color: #bfdbfe;
+  border-color: var(--accent-color-soft);
   box-shadow: 0 7px 16px rgba(15, 23, 42, 0.17);
   transform: translateY(-1px);
 }
 
 .utility-menu .utility-button-active.p-button {
   color: #ffffff;
-  background: #2563eb;
-  border-color: #2563eb;
+  background: var(--accent-color);
+  border-color: var(--accent-color);
 }
 
 .utility-menu .utility-button-active.p-button:hover,
 .utility-menu .utility-button-active.p-button:focus-visible {
   color: #ffffff;
-  background: #1d4ed8;
-  border-color: #1d4ed8;
+  background: var(--accent-color-strong);
+  border-color: var(--accent-color-strong);
 }
 
 .connection-style-item {
@@ -822,7 +910,7 @@ h1 {
   width: 34px;
   height: 18px;
   border-radius: 5px;
-  background: #2563eb;
+  background: var(--accent-color);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.28);
 }
 
@@ -853,7 +941,7 @@ h1 {
   top: 50%;
   right: 8px;
   left: 0;
-  border-top: 3px solid #2563eb;
+  border-top: 3px solid var(--accent-color);
   transform: translateY(-50%);
 }
 
@@ -864,7 +952,7 @@ h1 {
   height: 0;
   border-top: 6px solid transparent;
   border-bottom: 6px solid transparent;
-  border-left: 9px solid #2563eb;
+  border-left: 9px solid var(--accent-color);
   transform: translateY(-50%);
 }
 
@@ -885,8 +973,8 @@ h1 {
 }
 
 .zoom-controls .p-button:not(:disabled):hover {
-  color: #2563eb;
-  background: #eff6ff;
+  color: var(--accent-color);
+  background: var(--accent-surface);
 }
 
 .zoom-controls .zoom-level {
@@ -905,12 +993,12 @@ h1 {
 }
 
 .zoom-controls .zoom-level:hover {
-  color: #2563eb;
-  background: #eff6ff;
+  color: var(--accent-color);
+  background: var(--accent-surface);
 }
 
 .zoom-controls .zoom-level:focus-visible {
-  outline: 2px solid #2563eb;
+  outline: 2px solid var(--accent-color);
   outline-offset: -2px;
 }
 
@@ -936,13 +1024,13 @@ h1 {
 }
 
 .history-controls .p-button:not(.p-disabled) {
-  background: #2563eb;
-  border-color: #2563eb;
+  background: var(--accent-color);
+  border-color: var(--accent-color);
 }
 
 .history-controls .p-button:not(.p-disabled):hover {
-  background: #1d4ed8;
-  border-color: #1d4ed8;
+  background: var(--accent-color-strong);
+  border-color: var(--accent-color-strong);
 }
 
 .history-controls .p-button.p-disabled {
@@ -1029,7 +1117,7 @@ h1 {
 }
 
 .node-details a {
-  color: #2563eb;
+  color: var(--accent-color);
   font-weight: 700;
 }
 

@@ -1,21 +1,21 @@
-import type { GraphEdge, GraphEdgeType, GraphNode, GraphResponse } from "../types/graph";
+import type { GraphEdge, GraphEdgeType, GraphNode, GraphResponse, RepositoryProvider } from "../types/graph";
 import {
   getBranches,
   getBranchCommits,
-  parseGitHubRepoUrl,
+  parseRepositoryUrl,
   type RepositoryRef,
-  type GitHubBranch,
-  type GitHubCommit
-} from "./github";
+  type RepositoryBranch,
+  type RepositoryCommit
+} from "./repository";
 import { initialVisibleBranches } from "./branchSelection";
 
 interface RepositoryGraphCache {
   repo: RepositoryRef;
-  githubToken?: string;
-  branches: GitHubBranch[];
-  commitsByBranch: Map<string, GitHubCommit[]>;
+  accessToken?: string;
+  branches: RepositoryBranch[];
+  commitsByBranch: Map<string, RepositoryCommit[]>;
   commitLimitsByBranch: Map<string, number>;
-  relationshipCommitsByBranch: Map<string, GitHubCommit[]>;
+  relationshipCommitsByBranch: Map<string, RepositoryCommit[]>;
   relationshipCommitLimitsByBranch: Map<string, number>;
   maxCommits: number;
 }
@@ -27,7 +27,7 @@ function commitId(branchName: string, sha: string): string {
   return `commit:${branchName}:${sha}`;
 }
 
-function commitNode(commit: GitHubCommit, branchName: string, commitIndex: number): GraphNode {
+function commitNode(commit: RepositoryCommit, branchName: string, commitIndex: number): GraphNode {
   return {
     id: commitId(branchName, commit.sha),
     label: commit.sha.slice(0, 4),
@@ -35,11 +35,11 @@ function commitNode(commit: GitHubCommit, branchName: string, commitIndex: numbe
     branch: branchName,
     sha: commit.sha,
     commitIndex,
-    parentShas: (commit.parents ?? []).flatMap((parent) => parent.sha ? [parent.sha] : []),
-    author: commit.commit?.author?.name ?? null,
-    date: commit.commit?.author?.date ?? null,
-    message: commit.commit?.message?.split("\n")[0] ?? "",
-    url: commit.html_url ?? null
+    parentShas: commit.parentShas,
+    author: commit.author,
+    date: commit.date,
+    message: commit.message,
+    url: commit.url
   };
 }
 
@@ -52,7 +52,7 @@ function branchNode(branchName: string): GraphNode {
   };
 }
 
-function branchPriority(branch: GitHubBranch): [number, string] {
+function branchPriority(branch: RepositoryBranch): [number, string] {
   const name = branch.name.toLowerCase();
   if (["development", "develop", "dev"].includes(name)) {
     return [1, name];
@@ -66,7 +66,7 @@ function branchPriority(branch: GitHubBranch): [number, string] {
   return [0, name];
 }
 
-function compareBranches(left: GitHubBranch, right: GitHubBranch): number {
+function compareBranches(left: RepositoryBranch, right: RepositoryBranch): number {
   const [leftPriority, leftName] = branchPriority(left);
   const [rightPriority, rightName] = branchPriority(right);
   return leftPriority - rightPriority || leftName.localeCompare(rightName);
@@ -148,7 +148,7 @@ function hasIncomingBranchInference(edges: Map<string, GraphEdge>, branchName: s
   ));
 }
 
-function commitSetKey(commits: GitHubCommit[]): string | null {
+function commitSetKey(commits: RepositoryCommit[]): string | null {
   if (commits.length === 0) {
     return null;
   }
@@ -198,12 +198,12 @@ function preferredMergeDestination(
     })[0] ?? null;
 }
 
-function normalizedGithubToken(githubToken?: string): string {
-  return githubToken?.trim() ?? "";
+function normalizedAccessToken(accessToken?: string): string {
+  return accessToken?.trim() ?? "";
 }
 
-function graphCacheKey(repo: RepositoryRef, githubToken?: string): string {
-  return `${repo.fullName.toLowerCase()}:${normalizedGithubToken(githubToken)}`;
+function graphCacheKey(repo: RepositoryRef, accessToken?: string): string {
+  return `${repo.provider}:${repo.fullName.toLowerCase()}:${normalizedAccessToken(accessToken)}`;
 }
 
 async function loadMissingBranchCommits(
@@ -235,7 +235,7 @@ async function loadMissingBranchCommits(
 
   await Promise.all([
     ...missingBranches.map(async (branchName) => {
-      const commits = await getBranchCommits(cache.repo, branchName, cache.maxCommits, cache.githubToken);
+      const commits = await getBranchCommits(cache.repo, branchName, cache.maxCommits, cache.accessToken);
       cache.commitsByBranch.set(branchName, commits);
       cache.commitLimitsByBranch.set(branchName, cache.maxCommits);
     }),
@@ -245,7 +245,7 @@ async function loadMissingBranchCommits(
         cache.repo,
         branchName,
         relationshipLimit,
-        cache.githubToken
+        cache.accessToken
       );
       cache.relationshipCommitsByBranch.set(branchName, commits);
       cache.relationshipCommitLimitsByBranch.set(branchName, relationshipLimit);
@@ -253,7 +253,7 @@ async function loadMissingBranchCommits(
   ]);
 }
 
-/** Builds graph nodes and direct Git/PR edges from the cached GitHub branch data. */
+/** Builds graph nodes and direct Git/PR edges from the cached repository branch data. */
 function graphFromCache(cache: RepositoryGraphCache): GraphResponse {
   const {
     repo,
@@ -262,7 +262,7 @@ function graphFromCache(cache: RepositoryGraphCache): GraphResponse {
     relationshipCommitsByBranch
   } = cache;
   if (branches.length === 0) {
-    return { repository: repo.fullName, nodes: [], edges: [] };
+    return { repository: repo.fullName, provider: repo.provider, nodes: [], edges: [] };
   }
 
   const nodes = new Map<string, GraphNode>();
@@ -271,7 +271,7 @@ function graphFromCache(cache: RepositoryGraphCache): GraphResponse {
   const visibleBranchCommitShas = new Map<string, Set<string>>();
   const branchCommitShas = new Map<string, Set<string>>();
   const branchCommitIndexes = new Map<string, Map<string, number>>();
-  const branchCommits = new Map<string, GitHubCommit[]>();
+  const branchCommits = new Map<string, RepositoryCommit[]>();
   const branchPositions = new Map<string, number>();
 
   for (const [branchIndex, branch] of branches.entries()) {
@@ -308,27 +308,26 @@ function graphFromCache(cache: RepositoryGraphCache): GraphResponse {
         });
       }
 
-      const directParent = (commit.parents ?? [])
-        .filter((parent): parent is { sha: string } => (
-          Boolean(parent.sha)
-          && visibleCommitShas.has(parent.sha as string)
-          && (visibleCommitIndexes.get(parent.sha as string) ?? -1) > index
+      const directParent = commit.parentShas
+        .filter((parentSha) => (
+          visibleCommitShas.has(parentSha)
+          && (visibleCommitIndexes.get(parentSha) ?? -1) > index
         ))
         .sort((left, right) => (
-          (visibleCommitIndexes.get(left.sha) ?? Number.POSITIVE_INFINITY)
-          - (visibleCommitIndexes.get(right.sha) ?? Number.POSITIVE_INFINITY)
+          (visibleCommitIndexes.get(left) ?? Number.POSITIVE_INFINITY)
+          - (visibleCommitIndexes.get(right) ?? Number.POSITIVE_INFINITY)
         ))[0];
 
       const directParentIndex = directParent
-        ? visibleCommitIndexes.get(directParent.sha) ?? Number.POSITIVE_INFINITY
+        ? visibleCommitIndexes.get(directParent) ?? Number.POSITIVE_INFINITY
         : Number.POSITIVE_INFINITY;
       const nextVisibleCommit = commits[index + 1];
       const visibleParentSha = directParentIndex === index + 1
-        ? directParent?.sha
+        ? directParent
         : nextVisibleCommit?.sha;
 
       if (visibleParentSha) {
-        const type: GraphEdgeType = directParentIndex === index + 1 && (commit.parents?.length ?? 0) > 1
+        const type: GraphEdgeType = directParentIndex === index + 1 && commit.parentShas.length > 1
           ? "merge"
           : "parent";
         addEdge(edges, {
@@ -343,23 +342,20 @@ function graphFromCache(cache: RepositoryGraphCache): GraphResponse {
   }
 
   const representedMerges = new Set<string>();
-  // Merge edges are created only from direct GitHub parent metadata, never from transitive ancestry.
+  // Merge edges are created only from direct provider parent metadata, never from transitive ancestry.
   branchCommits.forEach((commits, destinationBranch) => {
     commits.forEach((mergeCommit) => {
-      const parents = mergeCommit.parents ?? [];
+      const parents = mergeCommit.parentShas;
       if (parents.length < 2 || representedMerges.has(mergeCommit.sha)) {
         return;
       }
 
-      for (const mergedParent of parents.slice(1)) {
-        if (!mergedParent.sha) {
-          continue;
-        }
+      for (const mergedParentSha of parents.slice(1)) {
         const sourceCandidates = Array.from(branchCommitShas.entries())
           .filter(([branchName, shas]) => (
             branchName !== destinationBranch
-            && shas.has(mergedParent.sha as string)
-            && (visibleBranchCommitShas.get(branchName)?.has(mergedParent.sha as string) ?? false)
+            && shas.has(mergedParentSha)
+            && (visibleBranchCommitShas.get(branchName)?.has(mergedParentSha) ?? false)
             // A downstream branch may inherit both commits. It is not the direct merge source.
             && !shas.has(mergeCommit.sha)
           ))
@@ -387,7 +383,7 @@ function graphFromCache(cache: RepositoryGraphCache): GraphResponse {
 
         addEdge(edges, {
           id: `pull-request-merge:${sourceBranch}:${destinationBranch}:${mergeCommit.sha}`,
-          source: commitId(sourceBranch, mergedParent.sha),
+          source: commitId(sourceBranch, mergedParentSha),
           target: commitId(destinationBranch, mergeCommit.sha),
           type: "pull_request_merge",
           branch: sourceBranch
@@ -480,6 +476,7 @@ function graphFromCache(cache: RepositoryGraphCache): GraphResponse {
 
   return {
     repository: repo.fullName,
+    provider: repo.provider,
     nodes: Array.from(nodes.values()),
     edges: Array.from(edges.values())
   };
@@ -489,16 +486,17 @@ function graphFromCache(cache: RepositoryGraphCache): GraphResponse {
 export async function buildRepositoryGraph(
   repoUrl: string,
   maxCommits: number,
-  githubToken?: string
+  accessToken?: string,
+  provider: RepositoryProvider = "github"
 ): Promise<GraphResponse> {
-  const repo = parseGitHubRepoUrl(repoUrl);
-  const token = normalizedGithubToken(githubToken);
+  const repo = parseRepositoryUrl(repoUrl, provider);
+  const token = normalizedAccessToken(accessToken);
   const branches = (await getBranches(repo, 100, token)).sort(compareBranches);
   const key = graphCacheKey(repo, token);
   const previousCache = graphCaches.get(key);
   const cache: RepositoryGraphCache = {
     repo,
-    githubToken: token,
+    accessToken: token,
     branches,
     commitsByBranch: previousCache?.commitsByBranch ?? new Map(),
     commitLimitsByBranch: previousCache?.commitLimitsByBranch ?? new Map(),
@@ -522,16 +520,17 @@ export async function loadRepositoryBranches(
   repoUrl: string,
   maxCommits: number,
   branchNames: string[],
-  githubToken?: string
+  accessToken?: string,
+  provider: RepositoryProvider = "github"
 ): Promise<GraphResponse> {
-  const repo = parseGitHubRepoUrl(repoUrl);
-  const token = normalizedGithubToken(githubToken);
+  const repo = parseRepositoryUrl(repoUrl, provider);
+  const token = normalizedAccessToken(accessToken);
   const cache = graphCaches.get(graphCacheKey(repo, token));
   if (!cache) {
-    return buildRepositoryGraph(repoUrl, maxCommits, token);
+    return buildRepositoryGraph(repoUrl, maxCommits, token, provider);
   }
 
-  cache.githubToken = token;
+  cache.accessToken = token;
   cache.maxCommits = maxCommits;
   await loadMissingBranchCommits(cache, branchNames);
   return graphFromCache(cache);
@@ -542,16 +541,17 @@ export async function refreshRepositoryBranches(
   repoUrl: string,
   maxCommits: number,
   branchNames: string[],
-  githubToken?: string
+  accessToken?: string,
+  provider: RepositoryProvider = "github"
 ): Promise<GraphResponse> {
-  const repo = parseGitHubRepoUrl(repoUrl);
-  const token = normalizedGithubToken(githubToken);
+  const repo = parseRepositoryUrl(repoUrl, provider);
+  const token = normalizedAccessToken(accessToken);
   const branches = (await getBranches(repo, 100, token)).sort(compareBranches);
   const key = graphCacheKey(repo, token);
   const previousCache = graphCaches.get(key);
   const cache: RepositoryGraphCache = {
     repo,
-    githubToken: token,
+    accessToken: token,
     branches,
     commitsByBranch: previousCache?.commitsByBranch ?? new Map(),
     commitLimitsByBranch: previousCache?.commitLimitsByBranch ?? new Map(),

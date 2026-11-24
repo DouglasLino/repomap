@@ -2,14 +2,17 @@ import { Button } from "primereact/button";
 import { InputNumber } from "primereact/inputnumber";
 import { InputText } from "primereact/inputtext";
 import type { ClipboardEvent, FormEvent, KeyboardEvent } from "react";
+import type { RepositoryProvider } from "../types/graph";
 
 interface RepositoryFormProps {
+  provider: RepositoryProvider;
   repoUrl: string;
-  githubToken: string;
+  accessToken: string;
   maxCommits: number;
   loading: boolean;
+  onProviderChange: (value: RepositoryProvider) => void;
   onRepoUrlChange: (value: string) => void;
-  onGithubTokenChange: (value: string) => void;
+  onAccessTokenChange: (value: string) => void;
   onMaxCommitsChange: (value: number) => void;
   onSubmit: () => void;
 }
@@ -23,23 +26,27 @@ function maskedToken(token: string): string {
 }
 
 export function RepositoryForm({
+  provider,
   repoUrl,
-  githubToken,
+  accessToken,
   maxCommits,
   loading,
+  onProviderChange,
   onRepoUrlChange,
-  onGithubTokenChange,
+  onAccessTokenChange,
   onMaxCommitsChange,
   onSubmit
 }: RepositoryFormProps) {
+  const providerLabel = provider === "gitlab" ? "GitLab" : "GitHub";
+
   function replaceTokenRange(start: number, end: number, value: string) {
-    onGithubTokenChange(`${githubToken.slice(0, start)}${value}${githubToken.slice(end)}`);
+    onAccessTokenChange(`${accessToken.slice(0, start)}${value}${accessToken.slice(end)}`);
   }
 
   function tokenSelection(input: HTMLInputElement) {
     return {
-      start: input.selectionStart ?? githubToken.length,
-      end: input.selectionEnd ?? githubToken.length
+      start: input.selectionStart ?? accessToken.length,
+      end: input.selectionEnd ?? accessToken.length
     };
   }
 
@@ -72,7 +79,7 @@ export function RepositoryForm({
       return;
     }
 
-    if (event.key === "Delete" && start < githubToken.length) {
+    if (event.key === "Delete" && start < accessToken.length) {
       replaceTokenRange(start, start + 1, "");
     }
   }
@@ -93,30 +100,51 @@ export function RepositoryForm({
       }}
     >
       <div className="repo-url-field">
-        <i className="pi pi-github repo-url-icon" aria-hidden="true" />
+        <div className="repo-provider-toggle" role="group" aria-label="Proveedor Git">
+          <button
+            type="button"
+            className={`repo-provider-option${provider === "github" ? " repo-provider-option-active" : ""}`}
+            onClick={() => onProviderChange("github")}
+            aria-label="Usar GitHub"
+            aria-pressed={provider === "github"}
+            title="GitHub"
+          >
+            <i className="pi pi-github" aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            className={`repo-provider-option repo-provider-option-gitlab${provider === "gitlab" ? " repo-provider-option-active" : ""}`}
+            onClick={() => onProviderChange("gitlab")}
+            aria-label="Usar GitLab"
+            aria-pressed={provider === "gitlab"}
+            title="GitLab"
+          >
+            <span aria-hidden="true">GL</span>
+          </button>
+        </div>
         <InputText
           value={repoUrl}
           onChange={(event) => onRepoUrlChange(event.target.value)}
-          placeholder="https://github.com/DouglasLino/testDiagramView"
-          aria-label="URL del repositorio GitHub"
+          placeholder={provider === "gitlab" ? "https://gitlab.com/group/project" : "https://github.com/DouglasLino/testDiagramView"}
+          aria-label={`URL del repositorio ${providerLabel}`}
         />
       </div>
 
-      <div className="github-token-field">
-        <label htmlFor="github-token">Token</label>
+      <div className="provider-token-field">
+        <label htmlFor="provider-token">Token</label>
         <InputText
-          id="github-token"
-          value={maskedToken(githubToken)}
+          id="provider-token"
+          value={maskedToken(accessToken)}
           onBeforeInput={handleTokenBeforeInput}
           onKeyDown={handleTokenKeyDown}
           onPaste={handleTokenPaste}
           onChange={(event) => {
             if (!event.target.value.includes("*")) {
-              onGithubTokenChange(event.target.value);
+              onAccessTokenChange(event.target.value);
             }
           }}
           placeholder="token..."
-          aria-label="Token de GitHub"
+          aria-label={`Token de ${providerLabel}`}
           autoComplete="off"
           spellCheck={false}
         />

@@ -30,6 +30,7 @@ export function NodeDetailsPanel({
   onClose: () => void;
 }) {
   const formattedDate = formatNodeDate(node.date);
+  const sourceLabel = node.url?.includes("gitlab.com") ? "GitLab" : "GitHub";
 
   return (
     <div className="node-details-backdrop" onClick={onClose}>
@@ -56,7 +57,7 @@ export function NodeDetailsPanel({
           {node.url ? (
             <p>
               <a href={node.url} target="_blank" rel="noreferrer">
-                Ver en GitHub
+                Ver en {sourceLabel}
               </a>
             </p>
           ) : null}

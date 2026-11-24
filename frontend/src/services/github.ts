@@ -1,15 +1,12 @@
-export interface RepositoryRef {
-  owner: string;
-  repo: string;
-  fullName: string;
-}
+import {
+  RepositoryClientError,
+  type RepositoryBranch,
+  type RepositoryCommit,
+  type RepositoryRef
+} from "./repositoryTypes";
 
-export interface GitHubBranch {
-  name: string;
-}
-
-export interface GitHubCommit {
-  sha: string;
+interface GitHubCommitResponse {
+  sha?: string;
   html_url?: string;
   commit?: {
     author?: {
@@ -21,36 +18,31 @@ export interface GitHubCommit {
   parents?: Array<{ sha?: string }>;
 }
 
-export class GitHubClientError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "GitHubClientError";
-  }
-}
-
 export function parseGitHubRepoUrl(repoUrl: string): RepositoryRef {
   let url: URL;
 
   try {
     url = new URL(repoUrl);
   } catch {
-    throw new GitHubClientError("La URL debe tener formato https://github.com/owner/repo");
+    throw new RepositoryClientError("La URL debe tener formato https://github.com/owner/repo");
   }
 
   if (url.hostname.toLowerCase() !== "github.com") {
-    throw new GitHubClientError("La URL debe pertenecer a github.com");
+    throw new RepositoryClientError("La URL debe pertenecer a github.com");
   }
 
   const parts = url.pathname.split("/").filter(Boolean);
   if (parts.length < 2) {
-    throw new GitHubClientError("La URL debe tener formato https://github.com/owner/repo");
+    throw new RepositoryClientError("La URL debe tener formato https://github.com/owner/repo");
   }
 
   const repo = parts[1].replace(/\.git$/, "");
   return {
+    provider: "github",
     owner: parts[0],
     repo,
-    fullName: `${parts[0]}/${repo}`
+    fullName: `${parts[0]}/${repo}`,
+    projectPath: `${parts[0]}/${repo}`
   };
 }
 
@@ -76,50 +68,69 @@ async function githubGet<T>(
   });
 
   if (response.status === 404) {
-    throw new GitHubClientError("Repositorio no encontrado o privado");
+    throw new RepositoryClientError("Repositorio no encontrado o privado");
   }
   if (response.status === 403 || response.status === 429) {
     const remaining = response.headers.get("x-ratelimit-remaining");
-    throw new GitHubClientError(
+    throw new RepositoryClientError(
       remaining === "0"
         ? "Se alcanzo el limite de solicitudes anonimas de GitHub. Intenta nuevamente mas tarde."
         : "GitHub rechazo la solicitud por limite de uso."
     );
   }
   if (!response.ok) {
-    throw new GitHubClientError(`GitHub respondio con status ${response.status}`);
+    throw new RepositoryClientError(`GitHub respondio con status ${response.status}`);
   }
 
   return response.json() as Promise<T>;
 }
 
-export async function getBranches(repo: RepositoryRef, limit = 100, githubToken?: string): Promise<GitHubBranch[]> {
-  const branches = await githubGet<GitHubBranch[]>(
+function normalizeGitHubCommit(commit: GitHubCommitResponse): RepositoryCommit | null {
+  if (!commit.sha) {
+    return null;
+  }
+
+  return {
+    sha: commit.sha,
+    parentShas: (commit.parents ?? []).flatMap((parent) => parent.sha ? [parent.sha] : []),
+    author: commit.commit?.author?.name ?? null,
+    date: commit.commit?.author?.date ?? null,
+    message: commit.commit?.message?.split("\n")[0] ?? "",
+    url: commit.html_url ?? null
+  };
+}
+
+export async function getGitHubBranches(
+  repo: RepositoryRef,
+  limit = 100,
+  githubToken?: string
+): Promise<RepositoryBranch[]> {
+  const branches = await githubGet<RepositoryBranch[]>(
     `/repos/${repo.owner}/${repo.repo}/branches`,
     { per_page: limit },
     githubToken
   );
 
   if (!Array.isArray(branches)) {
-    throw new GitHubClientError("Respuesta inesperada al consultar ramas");
+    throw new RepositoryClientError("Respuesta inesperada al consultar ramas");
   }
   return branches;
 }
 
-export async function getBranchCommits(
+export async function getGitHubBranchCommits(
   repo: RepositoryRef,
   branchName: string,
   perPage: number,
   githubToken?: string
-): Promise<GitHubCommit[]> {
-  const commits = await githubGet<GitHubCommit[]>(
+): Promise<RepositoryCommit[]> {
+  const commits = await githubGet<GitHubCommitResponse[]>(
     `/repos/${repo.owner}/${repo.repo}/commits`,
     { sha: branchName, per_page: perPage },
     githubToken
   );
 
   if (!Array.isArray(commits)) {
-    throw new GitHubClientError("Respuesta inesperada al consultar commits");
+    throw new RepositoryClientError("Respuesta inesperada al consultar commits");
   }
-  return commits;
+  return commits.flatMap((commit) => normalizeGitHubCommit(commit) ?? []);
 }
